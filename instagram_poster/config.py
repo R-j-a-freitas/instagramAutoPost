@@ -51,5 +51,17 @@ def get_ig_business_id() -> str:
     return IG_BUSINESS_ACCOUNT_ID or IG_BUSINESS_ID
 
 
+# --- Gemini (Nano Banana) – geração de imagens a partir de Image Text ---
+GEMINI_API_KEY: str = _optional("GEMINI_API_KEY", "")
+GEMINI_IMAGE_MODEL: str = _optional("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+
+# --- Upload de imagens geradas (obrigatório para publicar sem ImageURL no Sheet) ---
+# Opção 1: URL única (formato: cloudinary://API_KEY:API_SECRET@CLOUD_NAME)
+CLOUDINARY_URL: str = _optional("CLOUDINARY_URL", "")
+# Opção 2: variáveis separadas (como no dashboard Cloudinary)
+CLOUDINARY_CLOUD_NAME: str = _optional("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY: str = _optional("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET: str = _optional("CLOUDINARY_API_SECRET", "")
+
 # --- Ambiente (dev/prod) ---
 ENV: str = _optional("ENV", "dev")

@@ -1,6 +1,8 @@
 # Instagram Auto Post
 
-App em **Python + Streamlit** para automatizar posts no Instagram usando a **Instagram Graph API** oficial e um **Google Sheet** como fonte de verdade. As imagens são geradas por ti (por exemplo com Canva ou outra ferramenta) e colocas o link em cada linha no Sheet na coluna **ImageURL**; o script apenas publica.
+App em **Python + Streamlit** para automatizar posts no Instagram usando a **Instagram Graph API** oficial e um **Google Sheet** como fonte de verdade.
+
+**Imagens:** podes (1) preencher a coluna **ImageURL** no Sheet com um link manual, ou (2) deixar **ImageURL** vazio e preencher **Image Text** — a app gera a imagem com **Gemini (Nano Banana)** e faz upload para **Cloudinary** para obter um URL público antes de publicar.
 
 ## Estrutura do projeto
 
@@ -12,6 +14,7 @@ instagramAutoPost/
     sheets_client.py   # interage com Google Sheets
     ig_client.py       # Instagram Graph API (criar + publicar media)
     scheduler.py       # lógica de escolha do próximo post e publicação
+    image_generator.py # geração de imagens com Gemini (Nano Banana) + upload Cloudinary
   app.py               # Streamlit (main)
   requirements.txt
   .env.example
@@ -23,12 +26,12 @@ instagramAutoPost/
 - **Aba** (ex.: `Folha1`) com as colunas:
   - **Date** (YYYY-MM-DD)
   - **Time** (HH:MM)
-  - **Image Text** (texto que vai na imagem – informativo)
+  - **Image Text** (texto que vai na imagem – usado como prompt para a Gemini se ImageURL estiver vazio)
   - **Caption** (texto + hashtags para o post)
   - **Hashtags** (opcional, pode ser ignorado)
   - **Status** (`ready` / `posted`)
   - **Published** (`yes` ou vazio)
-  - **ImageURL** – **URL público da imagem** (obrigatório para publicar; cada imagem é gerada por ti e o link colocado aqui)
+  - **ImageURL** – URL público da imagem. Opcional: se vazio, a app gera a imagem com Gemini a partir de **Image Text** e faz upload para Cloudinary.
 
 Linha 1 = cabeçalho; dados a partir da linha 2.
 
@@ -72,7 +75,20 @@ No `.env`:
 - `IG_BUSINESS_ID=` — ID da conta de negócios Instagram.
 - `IG_ACCESS_TOKEN=` — token de acesso (idealmente long-lived).
 
-### 3. Ficheiro `.env`
+### 4. Gemini (Nano Banana) + Cloudinary (geração automática de imagens)
+
+Se quiseres que a app **gere as imagens** a partir da coluna **Image Text** (em vez de preencheres ImageURL manualmente):
+
+1. **Gemini API Key:** em [Google AI Studio](https://aistudio.google.com/apikey) cria uma API key e define no `.env`:
+   - `GEMINI_API_KEY=...`
+2. **Cloudinary:** cria uma conta em [cloudinary.com](https://cloudinary.com) (plano gratuito). No Dashboard, copia a **Cloudinary URL** (Environment variable) e define no `.env`:
+   - `CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME`
+
+Documentação: [Nano Banana image generation](https://ai.google.dev/gemini-api/docs/image-generation).
+
+Se **ImageURL** estiver preenchido no Sheet, a app usa esse URL e não chama a Gemini nem o Cloudinary.
+
+### 5. Ficheiro `.env`
 
 Copia `.env.example` para `.env` e preenche:
 
@@ -82,6 +98,10 @@ GOOGLE_SERVICE_ACCOUNT_JSON=/caminho/para/service_account.json
 
 IG_BUSINESS_ID=...
 IG_ACCESS_TOKEN=...
+
+# Para gerar imagens a partir de Image Text:
+GEMINI_API_KEY=...
+CLOUDINARY_URL=cloudinary://...
 
 ENV=dev
 ```
