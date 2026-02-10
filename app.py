@@ -14,10 +14,22 @@ if "last_publish_result" not in st.session_state:
     st.session_state.last_publish_result = None  # (success: bool, message: str, media_id: str | None)
 
 
+SERVICE_ACCOUNT_JSON_URL = "https://console.cloud.google.com/apis/credentials"
+
 def main():
     st.set_page_config(page_title="Instagram Auto Post", page_icon="📸", layout="wide")
     st.title("Instagram Auto Post")
     st.caption("Publicação via Instagram Graph API + Google Sheet")
+
+    # Sidebar: link para sacar o JSON de configuração (service account)
+    with st.sidebar:
+        st.subheader("Configuração")
+        st.markdown(
+            "**JSON da Service Account (Google Sheets)**  \n"
+            "Descarrega o ficheiro JSON e coloca o caminho no `.env` em `GOOGLE_SERVICE_ACCOUNT_JSON`:"
+        )
+        st.link_button("Abrir Google Cloud Console → Credentials", SERVICE_ACCOUNT_JSON_URL, type="secondary")
+        st.caption("Credenciais → Criar credenciais → Conta de serviço → Criar chave (JSON)")
 
     try:
         # Próximos posts (7–14 dias)
