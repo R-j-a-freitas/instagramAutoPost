@@ -17,15 +17,16 @@
   - Título: **IG keepcalmnbepositive – Content**
   - ID: `1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig`
   - Worksheet: **Folha1**
-  - Estrutura das colunas:
-    - **A:** Date (YYYY‑MM‑DD)
-    - **B:** Time (HH:MM)
-    - **C:** Image Text (texto principal da imagem)
-    - **D:** Caption (texto da legenda já com hashtags no fim)
-    - **E:** Hashtags (redundante, pode ser ignorado)
-    - **F:** Status (ready / posted)
-    - **G:** Published (yes se já foi publicado no Instagram, senão vazio)
-    - **H:** ImageURL *(coluna adicional: URL público da imagem para a Graph API; obrigatória para publicar)*
+  - Estrutura oficial das colunas (ordem fixa):
+    - **1. Date** – data do post (YYYY‑MM‑DD)
+    - **2. Time** – hora do post (HH:MM)
+    - **3. Image Text** – quote na imagem
+    - **4. Caption** – texto “humano” de apoio (explicação/legenda)
+    - **5. Gemini_Prompt** – prompt técnico para o Gemini criar a imagem
+    - **6. Status** – ready / posted / etc.
+    - **7. Published** – se já foi publicado no IG (yes / vazio)
+    - **8. ImageURL** – URL da imagem final no Cloudinary
+    - **9. Image Prompt** – estado/notas sobre a geração (ex.: "ok – Gemini+Cloudinary")
 
 - **Estado atual do sheet (para a lógica):**
   - Linhas 2–6 → Date = 2026‑02‑09, já publicadas hoje → Published = "yes".
@@ -40,7 +41,8 @@
 2. Ler e escrever no Sheet `1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig`, tab **Folha1**, respeitando as colunas e flags (Status, Published, ImageURL).
 3. Implementar a lógica de:
    - escolher o próximo post com **Status = "ready"** e **Published** vazio, a partir de hoje pela Date/Time;
-   - publicar no IG via **Instagram Graph API** usando a **Caption** (coluna D) e a **ImageURL** (coluna H);
+   - publicar no IG via **Instagram Graph API** usando a **Caption** (coluna 4) e a **ImageURL** (coluna 8);
+   - se ImageURL vazio, gerar imagem com **Gemini_Prompt** (coluna 5) e upload para Cloudinary;
    - depois marcar **Published = "yes"** e **Status = "posted"** nessa linha.
 
 ---

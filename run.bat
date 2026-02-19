@@ -13,6 +13,7 @@ REM Instalar dependências se necessário (descomenta a linha abaixo na primeira
 REM py -m pip install -r requirements.txt
 
 echo A iniciar Streamlit...
-py -m streamlit run app.py
+REM Porta 8502 para coincidir com OAUTH_REDIRECT_BASE no .env (evita redirect_uri_mismatch)
+py -m streamlit run app.py --server.port 8502
 
 pause

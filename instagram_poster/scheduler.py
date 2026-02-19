@@ -7,6 +7,8 @@ from datetime import date, datetime, time
 from typing import Any, Literal, Optional
 
 from instagram_poster import ig_client, sheets_client
+from instagram_poster.config import get_image_provider
+from instagram_poster.providers import AVAILABLE_PROVIDERS
 
 logger = logging.getLogger(__name__)
 
@@ -35,33 +37,41 @@ def select_post_to_publish(
 def publish_post(post: dict[str, Any]) -> str:
     """
     Publica um post no Instagram e marca o Sheet como publicado.
-    - post: dicionário com image_url (opcional), image_text, caption, row_index.
-    - Se image_url estiver vazio e image_text existir, gera a imagem com Gemini (Nano Banana)
+    - post: dicionário com image_url (opcional), gemini_prompt, image_text, caption, row_index.
+    - Se image_url estiver vazio, gera a imagem com o provedor activo usando Gemini_Prompt (ou Image Text como fallback)
       e faz upload para Cloudinary para obter um URL público.
     - Devolve o media_id do post publicado.
     """
     image_url = (post.get("image_url") or "").strip()
+    gemini_prompt = (post.get("gemini_prompt") or "").strip()
     image_text = (post.get("image_text") or "").strip()
     caption = (post.get("caption") or "").strip()
     row_index = post.get("row_index")
     if row_index is None:
         raise ValueError("O post não tem row_index (linha do Sheet).")
 
-    if not image_url and image_text:
+    if not image_url and (gemini_prompt or image_text):
+        provider_name = get_image_provider()
+        provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
         try:
             from instagram_poster import image_generator
-            image_url = image_generator.get_image_url_from_sheet_description(
-                image_text, public_id_prefix=f"keepcalm_{row_index}"
+            image_url = image_generator.get_image_url_from_prompt(
+                prompt=gemini_prompt or image_text,
+                quote_text=image_text,
+                use_full_prompt=bool(gemini_prompt),
+                public_id_prefix=f"keepcalm_{row_index}",
             )
         except Exception as e:
             raise ValueError(
-                f"Imagem gerada pela Gemini mas falha ao obter URL público: {e}. "
-                "Preenche ImageURL no Sheet ou configura CLOUDINARY_URL no .env."
+                f"Falha ao gerar imagem com {provider_label}: {e}. "
+                "Verifica as credenciais na Configuração ou preenche ImageURL no Sheet."
             ) from e
     if not image_url:
+        provider_name = get_image_provider()
+        provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
         raise ValueError(
-            "O post não tem ImageURL no Sheet. Preenche a coluna ImageURL com um link da imagem "
-            "ou deixa vazio e garante que Image Text está preenchido e que GEMINI_API_KEY e CLOUDINARY_URL estão no .env."
+            f"O post não tem ImageURL no Sheet. Preenche ImageURL ou configura "
+            f"o provedor de imagens ({provider_label}) na página Configuração."
         )
 
     creation_id = ig_client.create_media(image_url=image_url, caption=caption)

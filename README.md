@@ -2,7 +2,7 @@
 
 App em **Python + Streamlit** para automatizar posts no Instagram usando a **Instagram Graph API** oficial e um **Google Sheet** como fonte de verdade.
 
-**Imagens:** podes (1) preencher a coluna **ImageURL** no Sheet com um link manual, ou (2) deixar **ImageURL** vazio e preencher **Image Text** — a app gera a imagem com **Gemini (Nano Banana)** e faz upload para **Cloudinary** para obter um URL público antes de publicar.
+**Imagens:** podes (1) preencher a coluna **ImageURL** no Sheet com um link manual, ou (2) deixar **ImageURL** vazio e preencher **Gemini_Prompt** — a app gera a imagem com **Gemini (Nano Banana)** e faz upload para **Cloudinary** antes de publicar.
 
 ## Estrutura do projeto
 
@@ -23,17 +23,21 @@ instagramAutoPost/
 
 ## Requisitos do Google Sheet
 
-- **Aba** (ex.: `Folha1`) com as colunas:
-  - **Date** (YYYY-MM-DD)
-  - **Time** (HH:MM)
-  - **Image Text** (texto que vai na imagem – usado como prompt para a Gemini se ImageURL estiver vazio)
-  - **Caption** (texto + hashtags para o post)
-  - **Hashtags** (opcional, pode ser ignorado)
-  - **Status** (`ready` / `posted`)
-  - **Published** (`yes` ou vazio)
-  - **ImageURL** – URL público da imagem. Opcional: se vazio, a app gera a imagem com Gemini a partir de **Image Text** e faz upload para Cloudinary.
+- **Aba** (ex.: `Folha1`) com as colunas (ordem fixa):
+  1. **Date** – data do post (YYYY-MM-DD)
+  2. **Time** – hora do post (HH:MM)
+  3. **Image Text** – quote na imagem
+  4. **Caption** – texto “humano” de apoio (explicação/legenda)
+  5. **Gemini_Prompt** – prompt técnico para o Gemini criar a imagem
+  6. **Status** – ready / posted / etc.
+  7. **Published** – se já foi publicado no IG (yes / vazio)
+  8. **ImageURL** – URL da imagem final no Cloudinary
+  9. **Image Prompt** – estado/notas sobre a geração (ex.: "ok – Gemini+Cloudinary")
 
-Linha 1 = cabeçalho; dados a partir da linha 2.
+Linha 1 = cabeçalho; dados a partir da linha 2. Se **ImageURL** estiver vazio, a app gera a imagem com **Gemini_Prompt** e faz upload para Cloudinary.
+
+Para preencher **Gemini_Prompt** a partir do Image Text de cada linha, corre:
+`py -m scripts.update_gemini_prompts` ou `run_update_prompts.bat` (requer .env com GOOGLE_SERVICE_ACCOUNT_JSON e IG_SHEET_ID).
 
 ## Configuração
 
@@ -77,7 +81,7 @@ No `.env`:
 
 ### 4. Gemini (Nano Banana) + Cloudinary (geração automática de imagens)
 
-Se quiseres que a app **gere as imagens** a partir da coluna **Image Text** (em vez de preencheres ImageURL manualmente):
+Se quiseres que a app **gere as imagens** a partir da coluna **Gemini_Prompt** (em vez de preencheres ImageURL manualmente):
 
 1. **Gemini API Key:** em [Google AI Studio](https://aistudio.google.com/apikey) cria uma API key e define no `.env`:
    - `GEMINI_API_KEY=...`

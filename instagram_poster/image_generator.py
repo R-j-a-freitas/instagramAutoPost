@@ -1,10 +1,11 @@
 """
-Geração de imagens com Gemini (Nano Banana) a partir do texto do Sheet (Image Text).
-As imagens são geradas em memória; para publicar no Instagram é necessário um URL público,
-por isso fazemos upload para Cloudinary quando CLOUDINARY_URL está definido.
+Geração de imagens a partir de prompt (multi-provedor) e upload para Cloudinary.
+O provedor activo é definido por IMAGE_PROVIDER no .env (gemini, openai, pollinations).
+Após gerar a imagem, sobrepõe o texto da quote (Image Text) automaticamente.
 """
 import io
 import logging
+import textwrap
 from typing import Optional
 
 from instagram_poster.config import (
@@ -12,74 +13,113 @@ from instagram_poster.config import (
     CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME,
     CLOUDINARY_URL,
-    GEMINI_API_KEY,
-    GEMINI_IMAGE_MODEL,
+    get_image_provider,
 )
+from instagram_poster.providers import get_provider
 
 logger = logging.getLogger(__name__)
 
 
 def generate_image_from_prompt(prompt: str) -> bytes:
     """
-    Gera uma imagem com o modelo Gemini Nano Banana (gemini-2.5-flash-image)
-    a partir do texto (ex.: coluna Image Text do Sheet).
-    Devolve os bytes da imagem (PNG).
+    Gera uma imagem usando o provedor activo (config IMAGE_PROVIDER).
+    Devolve os bytes da imagem.
     """
-    if not GEMINI_API_KEY:
-        raise ValueError(
-            "Defina GEMINI_API_KEY no .env. Obtém uma chave em https://aistudio.google.com/apikey"
-        )
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        raise ImportError(
-            "Instala o pacote google-genai: pip install google-genai"
-        ) from None
+    provider_name = get_image_provider()
+    provider = get_provider(provider_name)
+    logger.info("A gerar imagem com provedor '%s'...", provider_name)
+    return provider.generate(prompt)
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    # Pedir resposta com texto e imagem (Nano Banana devolve imagem com este modelo)
-    try:
-        config = types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"])
-        response = client.models.generate_content(
-            model=GEMINI_IMAGE_MODEL,
-            contents=[prompt],
-            config=config,
-        )
-    except (TypeError, AttributeError):
-        # Fallback sem config se o SDK não suportar response_modalities
-        response = client.models.generate_content(
-            model=GEMINI_IMAGE_MODEL,
-            contents=[prompt],
-        )
-    # Aceder a parts: SDK pode expor response.parts ou response.candidates[0].content.parts
-    parts = getattr(response, "parts", None) or (
-        response.candidates[0].content.parts if response.candidates and response.candidates[0].content else []
+
+def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
+    """
+    Sobrepõe o texto da quote centrado na imagem.
+    Usa Pillow para renderizar tipografia legível com sombra.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    w, h = img.size
+
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Tentar carregar fonte — fallback para default
+    target_font_size = max(28, int(h * 0.05))
+    font = None
+    font_paths = [
+        "C:/Windows/Fonts/georgia.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/times.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ]
+    for fp in font_paths:
+        try:
+            font = ImageFont.truetype(fp, target_font_size)
+            break
+        except (OSError, IOError):
+            continue
+    if font is None:
+        font = ImageFont.load_default()
+        target_font_size = 20
+
+    # Quebrar texto em linhas que caibam (~80% da largura)
+    max_text_width = int(w * 0.80)
+    chars_per_line = max(15, int(max_text_width / (target_font_size * 0.55)))
+    lines = textwrap.wrap(quote_text.strip(), width=chars_per_line)
+    if not lines:
+        return image_bytes
+
+    # Calcular dimensões do bloco de texto
+    line_spacing = int(target_font_size * 0.4)
+    line_heights = []
+    line_widths = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_widths.append(bbox[2] - bbox[0])
+        line_heights.append(bbox[3] - bbox[1])
+
+    total_text_height = sum(line_heights) + line_spacing * (len(lines) - 1)
+    max_line_width = max(line_widths)
+
+    # Fundo semi-transparente atrás do texto
+    padding_x = int(w * 0.06)
+    padding_y = int(h * 0.04)
+    box_w = max_line_width + padding_x * 2
+    box_h = total_text_height + padding_y * 2
+    box_x = (w - box_w) // 2
+    box_y = (h - box_h) // 2
+
+    draw.rounded_rectangle(
+        [box_x, box_y, box_x + box_w, box_y + box_h],
+        radius=int(min(w, h) * 0.02),
+        fill=(0, 0, 0, 120),
     )
-    if not parts:
-        raise ValueError("A API Gemini não devolveu nenhuma imagem.")
 
-    for part in parts:
-        if getattr(part, "inline_data", None) and getattr(part.inline_data, "data", None):
-            return bytes(part.inline_data.data)
-        if hasattr(part, "as_image") and callable(part.as_image):
-            try:
-                img = part.as_image()
-                if img is not None:
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    return buf.getvalue()
-            except Exception:
-                pass
+    # Desenhar texto linha a linha, centrado
+    y_cursor = box_y + padding_y
+    for i, line in enumerate(lines):
+        lw = line_widths[i]
+        x = (w - lw) // 2
 
-    raise ValueError("Resposta da Gemini sem dados de imagem.")
+        # Sombra
+        draw.text((x + 2, y_cursor + 2), line, font=font, fill=(0, 0, 0, 180))
+        # Texto principal
+        draw.text((x, y_cursor), line, font=font, fill=(255, 255, 255, 245))
+
+        y_cursor += line_heights[i] + line_spacing
+
+    result = Image.alpha_composite(img, overlay).convert("RGB")
+    buf = io.BytesIO()
+    result.save(buf, format="PNG", quality=95)
+    return buf.getvalue()
 
 
 def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_post") -> str:
     """
     Faz upload dos bytes da imagem para Cloudinary e devolve o URL público.
-    Configuração: usa CLOUDINARY_URL ou, em alternativa, as variáveis
-    CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET.
     """
     try:
         import cloudinary
@@ -98,9 +138,9 @@ def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_p
         )
     else:
         raise ValueError(
-            "Para publicar imagens geradas pela Gemini, configura o Cloudinary no .env: "
-            "ou CLOUDINARY_URL (formato: cloudinary://API_KEY:API_SECRET@CLOUD_NAME) "
-            "ou as variáveis CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET. "
+            "Configura o Cloudinary no .env: "
+            "CLOUDINARY_URL (formato: cloudinary://API_KEY:API_SECRET@CLOUD_NAME) "
+            "ou CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET. "
             "Ou preenche a coluna ImageURL no Sheet com um link manual."
         )
 
@@ -118,25 +158,37 @@ def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_p
     return url
 
 
-# Prompt base para quote cards (mindset, self-love, healing) em inglês
 _QUOTE_CARD_PROMPT = (
-    "Create a single square or 4:5 vertical image for Instagram. "
-    "The image must display this text clearly and prominently as the main content, "
-    "like a motivational or affirmation quote card: \"{text}\". "
-    "Use a clean, modern design with readable typography. "
-    "Style: minimalist, positive, soft colors or gradient background. "
-    "Do not add extra sentences, only the given text must appear."
+    "Create a beautiful square image for Instagram (1080x1080). "
+    "Theme inspired by: \"{text}\". "
+    "Style: calm, minimalist, positive atmosphere. Soft colors, gradient or nature background. "
+    "Do NOT include any text, letters, words, or watermarks in the image. "
+    "The image should be a clean visual background suitable for overlaying a quote."
 )
 
 
-def get_image_url_from_sheet_description(image_text: str, public_id_prefix: str = "ig_post") -> str:
+def get_image_url_from_prompt(
+    prompt: str,
+    quote_text: Optional[str] = None,
+    use_full_prompt: bool = True,
+    public_id_prefix: str = "ig_post",
+) -> str:
     """
-    Gera uma imagem a partir de image_text (Gemini Nano Banana) e devolve um URL público
-    (via upload para Cloudinary). Usado quando a linha do Sheet não tem ImageURL preenchido.
-    O prompt orienta o modelo a criar um quote card com o texto bem visível.
+    Gera uma imagem com o provedor activo, sobrepõe a quote, e devolve URL público (Cloudinary).
+
+    - prompt: Gemini_Prompt (descritivo da cena) ou Image Text como fallback
+    - quote_text: texto da quote a sobrepor na imagem (Image Text)
+    - use_full_prompt=True: usa prompt directamente (coluna Gemini_Prompt)
+    - use_full_prompt=False: envolve no template de fundo para quote card
     """
-    if not (image_text or "").strip():
-        raise ValueError("Image Text está vazio; não é possível gerar a imagem.")
-    prompt = _QUOTE_CARD_PROMPT.format(text=image_text.strip())
-    image_bytes = generate_image_from_prompt(prompt)
+    if not (prompt or "").strip():
+        raise ValueError("O prompt está vazio; não é possível gerar a imagem.")
+    text = prompt.strip()
+    final_prompt = text if use_full_prompt else _QUOTE_CARD_PROMPT.format(text=text)
+    image_bytes = generate_image_from_prompt(final_prompt)
+
+    if quote_text and quote_text.strip():
+        logger.info("A sobrepor quote na imagem: '%s'", quote_text[:60])
+        image_bytes = overlay_quote_on_image(image_bytes, quote_text)
+
     return upload_image_to_cloudinary(image_bytes, public_id_prefix=public_id_prefix)
