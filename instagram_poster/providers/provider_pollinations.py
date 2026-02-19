@@ -14,7 +14,7 @@ _DEFAULT_PARAMS = {
     "height": "1080",
     "model": "flux",
     "nologo": "true",
-    "enhance": "true",
+    "enhance": "false",
 }
 
 

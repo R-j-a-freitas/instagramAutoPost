@@ -273,3 +273,27 @@ def update_gemini_prompt(row_index: int, prompt: str) -> None:
         raise ValueError("Sheet sem coluna Gemini_Prompt")
     sheet.update_cell(row_index, gemini_col + 1, prompt)
     logger.info("Gemini_Prompt atualizado: linha %s", row_index)
+
+
+def append_rows(rows: list[list[str]]) -> int:
+    """Adiciona linhas ao final do Sheet. Retorna numero de linhas adicionadas."""
+    sheet = _get_sheet()
+    sheet.append_rows(rows, value_input_option="USER_ENTERED")
+    logger.info("Adicionadas %d linhas ao Sheet", len(rows))
+    return len(rows)
+
+
+def get_last_date() -> Optional[str]:
+    """Devolve a data (string) da ultima linha do Sheet, ou None se vazio."""
+    sheet = _get_sheet()
+    all_rows = sheet.get_all_values()
+    if not all_rows or len(all_rows) < 2:
+        return None
+    col = _parse_header_row(all_rows[0])
+    date_idx = col.get(COL_DATE)
+    if date_idx is None:
+        return None
+    for row in reversed(all_rows[1:]):
+        if date_idx < len(row) and row[date_idx].strip():
+            return row[date_idx].strip()
+    return None

@@ -2,11 +2,18 @@
 Geração de imagens a partir de prompt (multi-provedor) e upload para Cloudinary.
 O provedor activo é definido por IMAGE_PROVIDER no .env (gemini, openai, pollinations).
 Após gerar a imagem, sobrepõe o texto da quote (Image Text) automaticamente.
+
+Para evitar que o modelo de imagem (FLUX) renderize texto na imagem, o texto da
+quote nunca é incluído no prompt enviado ao AI. Em vez disso, a quote é convertida
+numa descrição visual via LLM e o texto é sobreposto depois via Pillow.
 """
 import io
 import logging
+import re
 import textwrap
 from typing import Optional
+
+import requests
 
 from instagram_poster.config import (
     CLOUDINARY_API_KEY,
@@ -14,10 +21,105 @@ from instagram_poster.config import (
     CLOUDINARY_CLOUD_NAME,
     CLOUDINARY_URL,
     get_image_provider,
+    get_pollinations_api_key,
 )
 from instagram_poster.providers import get_provider
 
 logger = logging.getLogger(__name__)
+
+_SCENE_SYSTEM_PROMPT = (
+    "You are a visual scene describer for image generation. "
+    "Given a quote or phrase, describe a concrete image scene that matches its mood and theme. "
+    "Include: setting/environment, color palette, mood/emotion, and visual elements. "
+    "CRITICAL RULES:\n"
+    "- NEVER include any text, letters, typography, or words in the description.\n"
+    "- NEVER repeat or paraphrase the quote itself.\n"
+    "- Only describe visual elements (scenery, objects, lighting, colors).\n"
+    "- Keep the output under 80 words.\n"
+    "- Output ONLY the image generation prompt, nothing else."
+)
+
+_GENERIC_FALLBACK_PROMPT = (
+    "Beautiful square 1080x1080 image. Calm minimalist composition, "
+    "soft gradient colors blending from warm peach to cool lavender, "
+    "peaceful atmosphere with gentle light. Nature-inspired abstract background. "
+    "No text, no letters, no words, no watermarks."
+)
+
+_TEXT_RENDER_PATTERNS = [
+    re.compile(r"(?i)(?:the\s+image\s+must\s+)?display\s+this\s+text\s+clearly[^.;]*[.;]?"),
+    re.compile(r"(?i)must\s+display\s+this\s+text[^.;]*[.;]?"),
+    re.compile(r"(?i)like\s+a\s+motivational[^.;]*quote\s+card[^.;]*[.;]?"),
+    re.compile(r"(?i)only\s+the\s+given\s+text\s+must\s+appear[^.;]*[.;]?"),
+    re.compile(r"(?i)readable\s+typography[^.;]*[.;]?"),
+    re.compile(r"(?i)as\s+the\s+main\s+content[^.;]*[.;]?"),
+    re.compile(r"(?i)do\s+not\s+add\s+extra\s+sentences[^.;]*[.;]?"),
+]
+
+
+def _quote_to_scene_prompt(quote_text: str) -> str:
+    """Converte uma quote numa descrição puramente visual via Pollinations text API."""
+    api_key = get_pollinations_api_key()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": "openai",
+        "messages": [
+            {"role": "system", "content": _SCENE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Convert this quote into a visual scene prompt for image generation "
+                    f"(remember: describe ONLY visual elements, NO text in the image):\n"
+                    f'"{quote_text}"'
+                ),
+            },
+        ],
+    }
+
+    try:
+        resp = requests.post(
+            "https://gen.pollinations.ai/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        scene = resp.json()["choices"][0]["message"]["content"].strip()
+        if len(scene) < 15:
+            raise ValueError("Resposta LLM demasiado curta")
+        no_text_suffix = " No text, no letters, no words in the image."
+        if "no text" not in scene.lower():
+            scene += no_text_suffix
+        logger.info("Quote convertida em cena visual: %s", scene[:120])
+        return scene
+    except Exception as exc:
+        logger.warning("Falha ao converter quote via LLM (%s); a usar fallback genérico.", exc)
+        return _GENERIC_FALLBACK_PROMPT
+
+
+def _sanitize_prompt(prompt: str, quote_text: str) -> str:
+    """Remove texto literal da quote e instruções de renderização de texto do prompt."""
+    clean = prompt
+
+    if quote_text and quote_text.strip():
+        qt = quote_text.strip()
+        for variant in [f'"{qt}"', f"'{qt}'", qt]:
+            clean = clean.replace(variant, "")
+
+    for pattern in _TEXT_RENDER_PATTERNS:
+        clean = pattern.sub("", clean)
+
+    clean = re.sub(r'Theme\s+inspired\s+by:\s*["\']*\s*["\']*\s*\.?', "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"\s{2,}", " ", clean).strip()
+
+    no_text_instr = "Do NOT include any text, letters, words, or watermarks in the image."
+    if "do not include any text" not in clean.lower():
+        clean = clean.rstrip(".") + ". " + no_text_instr
+
+    return clean
 
 
 def generate_image_from_prompt(prompt: str) -> bytes:
@@ -159,12 +261,28 @@ def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_p
 
 
 _QUOTE_CARD_PROMPT = (
-    "Create a beautiful square image for Instagram (1080x1080). "
-    "Theme inspired by: \"{text}\". "
-    "Style: calm, minimalist, positive atmosphere. Soft colors, gradient or nature background. "
-    "Do NOT include any text, letters, words, or watermarks in the image. "
-    "The image should be a clean visual background suitable for overlaying a quote."
+    "Beautiful square 1080x1080 image. Calm minimalist composition, "
+    "soft gradient colors, peaceful atmosphere with gentle light. "
+    "Nature-inspired abstract background. "
+    "Do NOT include any text, letters, words, or watermarks in the image."
 )
+
+
+def _has_embedded_quote(prompt: str, quote_text: str) -> bool:
+    """Verifica se o prompt contém o texto literal da quote (ou parte substancial)."""
+    if not quote_text or not quote_text.strip():
+        return False
+    qt = quote_text.strip().lower()
+    pl = prompt.lower()
+    if qt in pl:
+        return True
+    words = qt.split()
+    if len(words) >= 5:
+        half = len(words) // 2
+        chunk = " ".join(words[:half])
+        if chunk in pl:
+            return True
+    return False
 
 
 def get_image_url_from_prompt(
@@ -183,11 +301,35 @@ def get_image_url_from_prompt(
     """
     if not (prompt or "").strip():
         raise ValueError("O prompt está vazio; não é possível gerar a imagem.")
-    text = prompt.strip()
-    final_prompt = text if use_full_prompt else _QUOTE_CARD_PROMPT.format(text=text)
+
+    has_overlay = bool(quote_text and quote_text.strip())
+
+    if has_overlay:
+        if use_full_prompt:
+            candidate = prompt.strip()
+            if _has_embedded_quote(candidate, quote_text):
+                sanitized = _sanitize_prompt(candidate, quote_text)
+                if len(sanitized.split()) < 8:
+                    logger.info("Prompt sanitizado ficou curto; a converter quote via LLM.")
+                    final_prompt = _quote_to_scene_prompt(quote_text)
+                else:
+                    final_prompt = sanitized
+            else:
+                final_prompt = candidate
+                no_text = "Do NOT include any text, letters, words, or watermarks in the image."
+                if "do not include any text" not in final_prompt.lower():
+                    final_prompt = final_prompt.rstrip(".") + ". " + no_text
+        else:
+            logger.info("Sem Gemini_Prompt; a converter quote via LLM.")
+            final_prompt = _quote_to_scene_prompt(quote_text)
+    else:
+        text = prompt.strip()
+        final_prompt = text if use_full_prompt else _QUOTE_CARD_PROMPT
+
+    logger.info("Prompt final para imagem: %s", final_prompt[:150])
     image_bytes = generate_image_from_prompt(final_prompt)
 
-    if quote_text and quote_text.strip():
+    if has_overlay:
         logger.info("A sobrepor quote na imagem: '%s'", quote_text[:60])
         image_bytes = overlay_quote_on_image(image_bytes, quote_text)
 

@@ -365,28 +365,177 @@ st.divider()
 
 # ========== 5. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
 st.subheader("5. Preencher Gemini_Prompt no Sheet")
-st.caption("Gera prompts visuais a partir do Image Text. A quote é sobreposta automaticamente na imagem ao publicar.")
+st.caption(
+    "Gera descrições visuais (sem texto) a partir da Image Text de cada linha, "
+    "usando IA para converter a quote numa cena. A quote é sobreposta na imagem ao publicar."
+)
 if st.button("Preencher Gemini_Prompt no Sheet"):
     _apply_config_from_session()
     try:
+        from instagram_poster.image_generator import _quote_to_scene_prompt
+
         rows = get_all_rows_with_image_text()
         if not rows:
             st.warning("Nenhuma linha com Image Text encontrada.")
         else:
-            template = (
-                "Create a beautiful square image for Instagram (1080x1080). "
-                "Theme inspired by: \"{text}\". "
-                "Style: calm, minimalist, positive atmosphere. Soft colors, gradient or nature background. "
-                "Do NOT include any text, letters, words, or watermarks in the image. "
-                "The image should be a clean visual background suitable for overlaying a quote."
-            )
-            for rec in rows:
-                prompt = template.format(text=(rec.get("image_text") or "").strip())
-                update_gemini_prompt(rec["row_index"], prompt)
-            st.success(f"Gemini_Prompt preenchido em {len(rows)} linhas.")
+            progress = st.progress(0, text="A converter quotes em descrições visuais...")
+            total = len(rows)
+            ok_count = 0
+            for i, rec in enumerate(rows):
+                image_text = (rec.get("image_text") or "").strip()
+                if not image_text:
+                    continue
+                scene_prompt = _quote_to_scene_prompt(image_text)
+                update_gemini_prompt(rec["row_index"], scene_prompt)
+                ok_count += 1
+                progress.progress((i + 1) / total, text=f"Linha {rec['row_index']}... ({i + 1}/{total})")
+            progress.empty()
+            st.success(f"Gemini_Prompt preenchido em {ok_count} linhas (descrição visual sem texto).")
             st.rerun()
     except Exception as e:
         st.error(f"Erro: {e}")
         st.info("Liga o Google Sheets primeiro.")
+
+st.divider()
+
+# ========== 6. AUTOPUBLISH ==========
+st.subheader("6. Publicacao automatica")
+st.caption("Publica posts automaticamente na hora agendada no Sheet. Funciona com a app aberta ou via Task Scheduler.")
+
+from instagram_poster import autopublish
+from instagram_poster.config import get_autopublish_enabled, get_autopublish_interval
+
+_ap_running = autopublish.is_running()
+_ap_enabled = get_autopublish_enabled()
+_ap_interval = get_autopublish_interval()
+
+# Toggle on/off
+ap_enabled = st.toggle(
+    "Activar autopublish",
+    value=_ap_enabled,
+    key="config_autopublish_enabled",
+)
+ap_interval = st.slider(
+    "Intervalo de verificacao (minutos)",
+    min_value=1, max_value=60, value=_ap_interval,
+    key="config_autopublish_interval",
+    help="A cada N minutos, verifica se ha posts prontos e publica automaticamente.",
+)
+
+# Guardar alteracoes no .env
+if ap_enabled != _ap_enabled or ap_interval != _ap_interval:
+    update_env_vars({
+        "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
+        "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
+    })
+    config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
+    config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
+
+# Botoes iniciar/parar
+col_ap1, col_ap2, _ = st.columns([1, 1, 2])
+with col_ap1:
+    if _ap_running:
+        if st.button("Parar autopublish", key="stop_autopublish"):
+            autopublish.stop_background_loop()
+            st.rerun()
+    else:
+        if st.button("Iniciar autopublish", type="primary", key="start_autopublish", disabled=not ap_enabled):
+            autopublish.start_background_loop(interval_minutes=ap_interval)
+            st.rerun()
+
+# Estado e estatisticas
+stats = autopublish.get_stats()
+last_check = autopublish.get_last_check()
+
+if _ap_running:
+    st.success(f"Autopublish activo (cada {_ap_interval} min)")
+elif ap_enabled:
+    st.info("Autopublish configurado mas nao iniciado. Clica 'Iniciar' ou reinicia a app.")
+else:
+    st.warning("Autopublish desactivado.")
+
+# Metricas resumo
+col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+with col_s1:
+    st.metric("Posts publicados", stats["total_published"])
+with col_s2:
+    st.metric("Erros", stats["total_errors"])
+with col_s3:
+    st.metric("Verificacoes", stats["total_checks"])
+with col_s4:
+    if last_check:
+        st.metric("Ultima verificacao", last_check.strftime("%H:%M:%S"))
+    elif stats["started_at"]:
+        st.metric("Iniciado em", stats["started_at"].strftime("%H:%M:%S"))
+    else:
+        st.metric("Ultima verificacao", "—")
+
+# Historico detalhado
+ap_log = autopublish.get_log()
+if ap_log:
+    published_entries = [e for e in ap_log if e.get("type") == "publish"]
+    error_entries = [e for e in ap_log if e.get("type") == "error"]
+    other_entries = [e for e in ap_log if e.get("type") not in ("publish", "error", "check")]
+
+    # Posts publicados
+    if published_entries:
+        with st.expander(f"Posts publicados ({len(published_entries)})", expanded=True):
+            for entry in reversed(published_entries):
+                ts = entry["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                quote = entry.get("quote", "")
+                post_date = entry.get("date", "")
+                post_time = entry.get("time", "")
+                row = entry.get("row", "")
+                mid = entry.get("media_id", "")
+                schedule_info = f"{post_date} {post_time}".strip()
+
+                col_p1, col_p2 = st.columns([3, 1])
+                with col_p1:
+                    st.markdown(f"**\"{quote}\"**" if quote else "*(sem quote)*")
+                with col_p2:
+                    st.caption(f"Publicado: {ts}")
+                detail_parts = []
+                if schedule_info:
+                    detail_parts.append(f"Agendado: {schedule_info}")
+                if row:
+                    detail_parts.append(f"Linha: {row}")
+                if mid:
+                    detail_parts.append(f"Media ID: `{mid}`")
+                if detail_parts:
+                    st.caption(" | ".join(detail_parts))
+                st.divider()
+
+    # Erros
+    if error_entries:
+        with st.expander(f"Erros ({len(error_entries)})"):
+            for entry in reversed(error_entries):
+                ts = entry["timestamp"].strftime("%H:%M:%S")
+                st.error(f"[{ts}] {entry['message']}")
+
+    # Eventos do sistema (start/stop)
+    if other_entries:
+        with st.expander(f"Eventos do sistema ({len(other_entries)})"):
+            for entry in reversed(other_entries):
+                ts = entry["timestamp"].strftime("%H:%M:%S")
+                st.info(f"[{ts}] {entry['message']}")
+else:
+    st.caption("Nenhuma actividade registada.")
+
+# Instrucoes Task Scheduler
+with st.expander("Configurar Windows Task Scheduler (publicar sem browser)"):
+    st.markdown("""
+**Para publicar automaticamente mesmo sem a app aberta:**
+
+1. Abre o **Agendador de Tarefas** do Windows (`taskschd.msc`)
+2. Clica **Criar Tarefa Basica**
+3. Nome: `InstagramAutoPost`
+4. Trigger: **Diariamente**, repetir a cada **5 minutos** (ou o intervalo que preferires)
+5. Acao: **Iniciar um programa**
+   - Programa: o caminho completo para `run_autopublish.bat`
+   - Iniciar em: a pasta do projecto
+6. Marca "Executar mesmo que o utilizador nao esteja ligado"
+
+O script `run_autopublish.bat` verifica uma vez se ha posts prontos e publica.
+    """)
 
 st.caption("Os valores são guardados no .env ao carregar JSON ou ao verificar. Mantém tudo sincronizado.")

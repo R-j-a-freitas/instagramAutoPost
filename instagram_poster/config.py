@@ -169,5 +169,23 @@ CLOUDINARY_CLOUD_NAME: str = _optional("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY: str = _optional("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET: str = _optional("CLOUDINARY_API_SECRET", "")
 
+# --- Autopublish ---
+AUTOPUBLISH_ENABLED: str = _optional("AUTOPUBLISH_ENABLED", "false")
+AUTOPUBLISH_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_INTERVAL_MINUTES", "5")
+
+
+def get_autopublish_enabled() -> bool:
+    val = get_runtime_override("AUTOPUBLISH_ENABLED") or AUTOPUBLISH_ENABLED
+    return val.lower() in ("true", "1", "yes", "on")
+
+
+def get_autopublish_interval() -> int:
+    val = get_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES") or AUTOPUBLISH_INTERVAL_MINUTES
+    try:
+        return max(1, int(val))
+    except (ValueError, TypeError):
+        return 5
+
+
 # --- Ambiente (dev/prod) ---
 ENV: str = _optional("ENV", "dev")

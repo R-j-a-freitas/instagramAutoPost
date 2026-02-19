@@ -105,6 +105,23 @@ def _render_status_sidebar():
     else:
         st.sidebar.error("Cloudinary: não configurado")
 
+    # Autopublish
+    from instagram_poster import autopublish
+    if autopublish.is_running():
+        interval = config.get_autopublish_interval()
+        st.sidebar.success(f"Autopublish: activo (cada {interval} min)")
+        last_check = autopublish.get_last_check()
+        if last_check:
+            st.sidebar.caption(f"Ultima verificacao: {last_check.strftime('%H:%M:%S')}")
+        ap_log = autopublish.get_log()
+        last_pub = next((e for e in reversed(ap_log) if e["success"] is True), None)
+        if last_pub:
+            st.sidebar.caption(f"Ultimo post: {last_pub['timestamp'].strftime('%H:%M:%S')} — {last_pub['message'][:40]}")
+    elif config.get_autopublish_enabled():
+        st.sidebar.warning("Autopublish: configurado mas parado")
+    else:
+        st.sidebar.info("Autopublish: desactivado")
+
     st.sidebar.markdown("---")
 
 
@@ -189,12 +206,12 @@ selected_row_index = row_values[row_options.index(selected_label)] if selected_l
 col1, col2, _ = st.columns([1, 1, 2])
 with col1:
     if st.button("Post next", type="primary"):
-        success, message, media_id = run_publish_next(today=date.today(), now=datetime.now().time())
+        success, message, media_id, _post = run_publish_next(today=date.today(), now=datetime.now().time())
         st.session_state.last_publish_result = (success, message, media_id)
         st.rerun()
 with col2:
     if st.button("Post selected row"):
-        success, message, media_id = run_publish_row(selected_row_index)
+        success, message, media_id, _post = run_publish_row(selected_row_index)
         st.session_state.last_publish_result = (success, message, media_id)
         st.rerun()
 

@@ -80,33 +80,35 @@ def publish_post(post: dict[str, Any]) -> str:
     return media_id
 
 
-def run_publish_next(today: Optional[date] = None, now: Optional[time] = None) -> tuple[bool, str, Optional[str]]:
+def run_publish_next(
+    today: Optional[date] = None, now: Optional[time] = None,
+) -> tuple[bool, str, Optional[str], Optional[dict[str, Any]]]:
     """
     Publica o próximo post (ready, não publicado, Date <= hoje).
-    Devolve (sucesso, mensagem, media_id ou None).
+    Devolve (sucesso, mensagem, media_id ou None, post_data ou None).
     """
     post = select_post_to_publish(mode="next", today=today, now=now)
     if not post:
-        return False, "Nenhum post pronto para publicar (Status=ready, Published vazio, Date <= hoje).", None
+        return False, "Nenhum post pronto para publicar (Status=ready, Published vazio, Date <= hoje).", None, None
     try:
         media_id = publish_post(post)
-        return True, f"Post publicado com sucesso. Media ID: {media_id}", media_id
+        return True, f"Post publicado com sucesso. Media ID: {media_id}", media_id, post
     except Exception as e:
         logger.exception("Erro ao publicar próximo post")
-        return False, str(e), None
+        return False, str(e), None, post
 
 
-def run_publish_row(row_index: int) -> tuple[bool, str, Optional[str]]:
+def run_publish_row(row_index: int) -> tuple[bool, str, Optional[str], Optional[dict[str, Any]]]:
     """
     Publica o post da linha row_index (1-based).
-    Devolve (sucesso, mensagem, media_id ou None).
+    Devolve (sucesso, mensagem, media_id ou None, post_data ou None).
     """
     post = select_post_to_publish(mode="row", row_index=row_index)
     if not post:
-        return False, f"Linha {row_index} não encontrada ou inválida.", None
+        return False, f"Linha {row_index} não encontrada ou inválida.", None, None
     try:
         media_id = publish_post(post)
-        return True, f"Post publicado com sucesso. Media ID: {media_id}", media_id
+        return True, f"Post publicado com sucesso. Media ID: {media_id}", media_id, post
     except Exception as e:
         logger.exception("Erro ao publicar post da linha %s", row_index)
-        return False, str(e), None
+        return False, str(e), None, post
