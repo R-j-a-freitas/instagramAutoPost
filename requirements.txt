@@ -9,3 +9,7 @@ google-genai
 openai
 Pillow
 cloudinary
+moviepy
+numpy
+yt-dlp
+imageio-ffmpeg

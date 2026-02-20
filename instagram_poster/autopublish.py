@@ -2,8 +2,10 @@
 Motor de publicacao automatica.
 - run_once(): verifica e publica o proximo post pronto (usado pelo CLI e pelo thread).
 - start_background_loop() / stop_background_loop(): thread de background dentro do Streamlit.
+- try_publish_auto_reel(): gera e publica um Reel quando ha 5 posts (8s/slide, fade, audio MUSIC).
 """
 import logging
+import random
 import threading
 from datetime import datetime
 from typing import Any, Optional
@@ -19,6 +21,7 @@ _last_check: Optional[datetime] = None
 _started_at: Optional[datetime] = None
 _total_published: int = 0
 _total_errors: int = 0
+_last_reel_row_indices: Optional[frozenset] = None
 
 
 def get_log() -> list[dict[str, Any]]:
@@ -38,6 +41,8 @@ def get_stats() -> dict[str, Any]:
             "total_published": _total_published,
             "total_errors": _total_errors,
             "total_checks": sum(1 for e in _log if e.get("type") == "check"),
+            "total_stories": sum(1 for e in _log if e.get("type") == "story"),
+            "total_reels": sum(1 for e in _log if e.get("type") == "reel"),
         }
 
 
@@ -68,12 +73,23 @@ def _add_log_entry(
             entry["time"] = post_data.get("time", "")
             entry["quote"] = post_data.get("image_text", "")
         _log.append(entry)
-        if success is True:
+        if entry_type == "publish" and success is True:
             _total_published += 1
-        elif success is False:
+        elif entry_type == "error" and success is False:
             _total_errors += 1
         if len(_log) > 100:
             _log.pop(0)
+
+
+def log_story_published(post_data: dict[str, Any], media_id: Optional[str] = None) -> None:
+    """Regista uma Story publicada no histórico (para monitorização)."""
+    _add_log_entry(
+        True,
+        "Story publicada",
+        entry_type="story",
+        post_data=post_data,
+        media_id=media_id,
+    )
 
 
 def run_once() -> Optional[bool]:
@@ -118,6 +134,70 @@ def run_once() -> Optional[bool]:
     return success
 
 
+def try_publish_auto_reel() -> bool:
+    """
+    Se houver pelo menos 5 posts publicados e o conjunto dos últimos 5 for diferente do último
+    Reel gerado, gera um Reel (8s/slide, fade, áudio aleatório da pasta MUSIC, caption que resume
+    os posts) e publica no Instagram. Retorna True se publicou, False caso contrário.
+    """
+    global _last_reel_row_indices
+    try:
+        from instagram_poster.reel_generator import (
+            create_reel_video,
+            generate_caption_for_posts,
+            get_available_music_tracks,
+            upload_video_to_cloudinary,
+        )
+        from instagram_poster.sheets_client import get_last_published_posts
+        from instagram_poster import ig_client
+    except Exception as e:
+        logger.warning("Autopublish Reel: import falhou: %s", e)
+        return False
+
+    posts = get_last_published_posts(n=5)
+    if len(posts) < 5:
+        return False
+    current_indices = frozenset(p.get("row_index") for p in posts if p.get("row_index") is not None)
+    if len(current_indices) < 5:
+        return False
+    with _lock:
+        if _last_reel_row_indices == current_indices:
+            return False
+
+    # Áudio aleatório da pasta MUSIC
+    tracks = get_available_music_tracks()
+    audio_path: Optional[str] = None
+    if tracks:
+        audio_path = random.choice(tracks)["path"]
+    caption = generate_caption_for_posts(posts)
+
+    try:
+        video_bytes = create_reel_video(
+            posts=posts,
+            duration_per_slide=8.0,
+            transition="fade",
+            audio_path=audio_path,
+            audio_volume=0.3,
+        )
+        video_url = upload_video_to_cloudinary(video_bytes)
+        creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
+        media_id = ig_client.publish_media(creation_id, max_wait=180)
+        with _lock:
+            _last_reel_row_indices = current_indices
+        _add_log_entry(
+            True,
+            f"Reel publicado (5 posts, 8s/slide): \"{caption[:50]}...\"",
+            entry_type="reel",
+            media_id=media_id,
+        )
+        logger.info("Autopublish: Reel publicado, media_id=%s", media_id)
+        return True
+    except Exception as e:
+        logger.exception("Autopublish Reel: falha")
+        _add_log_entry(False, f"Reel automático falhou: {e}", entry_type="error")
+        return False
+
+
 def _loop(interval_minutes: int):
     """Loop interno do thread de background."""
     logger.info("Autopublish: thread iniciado (intervalo=%dmin)", interval_minutes)
@@ -130,6 +210,12 @@ def _loop(interval_minutes: int):
                 continue
         except Exception:
             logger.exception("Autopublish: erro no loop")
+        try:
+            from instagram_poster.config import get_autopublish_reel_every_5
+            if get_autopublish_reel_every_5():
+                try_publish_auto_reel()
+        except Exception:
+            logger.exception("Autopublish: erro ao tentar Reel automático")
         _stop_event.wait(timeout=interval_secs)
     logger.info("Autopublish: thread parado")
 

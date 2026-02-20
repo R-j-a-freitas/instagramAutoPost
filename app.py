@@ -40,7 +40,7 @@ st.title("Instagram Auto Post")
 st.caption("Publicação via Instagram Graph API + Google Sheet")
 
 st.markdown("### Acesso rapido")
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 with col1:
     if st.button("⚙️ Configuracao", use_container_width=True):
         st.switch_page("pages/1_Configuracao.py")
@@ -50,6 +50,18 @@ with col2:
 with col3:
     if st.button("✏️ Criar Conteudo", use_container_width=True):
         st.switch_page("pages/3_Conteudo.py")
+with col4:
+    if st.button("🔄 Autopublish – Historico", use_container_width=True):
+        st.switch_page("pages/4_Autopublish.py")
+with col5:
+    if st.button("📱 Stories", use_container_width=True):
+        st.switch_page("pages/5_Stories.py")
+with col6:
+    if st.button("🎬 Reels", use_container_width=True):
+        st.switch_page("pages/4_Reels.py")
+with col7:
+    if st.button("🎵 YouTube Áudio", use_container_width=True):
+        st.switch_page("pages/6_YouTube_Audio.py")
 
 st.markdown("""
 ### Como usar
@@ -61,6 +73,11 @@ st.markdown("""
 
 3. **Posts** -- Ve os proximos posts planeados e publica manualmente com "Post next" ou "Post selected row".
 
-4. **Autopublish** -- Activa na Configuracao para publicar automaticamente na hora do Sheet.
-   Tambem podes configurar o Windows Task Scheduler para publicar sem o browser aberto.
+4. **Autopublish – Historico** -- Ve os posts publicados automaticamente, erros e eventos. Activa o autopublish e o intervalo na Configuracao; podes tambem configurar o Windows Task Scheduler para publicar sem o browser aberto.
+
+5. **Stories** -- Monitoriza as Stories publicadas e usa o botao para publicar uma Story a partir de um post aleatorio (entre os ja publicados no feed).
+
+6. **Reels** -- Gera um video slideshow (9:16) a partir dos ultimos posts publicados, com opcao de musica (upload ou biblioteca ambient), e publica no Instagram.
+
+7. **YouTube Áudio** -- Cola o link de um vídeo do YouTube e descarrega o áudio em MP3; podes guardar na pasta de música dos Reels.
 """)

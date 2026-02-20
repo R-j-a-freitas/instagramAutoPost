@@ -29,7 +29,7 @@ def _check_config() -> None:
 
 def create_media(image_url: str, caption: str) -> str:
     """
-    Cria um content container para uma imagem.
+    Cria um content container para uma imagem (feed).
     POST /{ig-business-id}/media com image_url e caption.
     Devolve o creation_id (container ID) para usar em publish_media.
     """
@@ -53,6 +53,65 @@ def create_media(image_url: str, caption: str) -> str:
     if not creation_id:
         logger.error("Resposta sem 'id': %s", data)
         raise ValueError("Resposta da API sem container ID")
+    return creation_id
+
+
+def create_story(image_url: str) -> str:
+    """
+    Cria um content container para uma Story (imagem 9:16, ex.: 1080x1920).
+    POST /{ig-user-id}/media com media_type=STORIES e image_url.
+    Devolve o creation_id para usar em publish_media.
+    """
+    _check_config()
+    ig_id = get_ig_business_id()
+    url = _url(f"/{ig_id}/media")
+    params = {
+        "media_type": "STORIES",
+        "image_url": image_url,
+        "access_token": get_ig_access_token(),
+    }
+    logger.info("A criar Story container para image_url=%s", image_url[:80] + "..." if len(image_url) > 80 else image_url)
+    resp = requests.post(url, params=params, timeout=30)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        logger.error("create_story falhou: status=%s body=%s", resp.status_code, resp.text)
+        raise
+    data = resp.json()
+    creation_id = data.get("id")
+    if not creation_id:
+        logger.error("Resposta sem 'id': %s", data)
+        raise ValueError("Resposta da API sem container ID para Story")
+    return creation_id
+
+
+def create_reel(video_url: str, caption: str) -> str:
+    """
+    Cria um content container para um Reel (vídeo).
+    POST /{ig-user-id}/media com media_type=REELS e video_url.
+    Devolve o creation_id para usar em publish_media(creation_id, max_wait=180).
+    """
+    _check_config()
+    ig_id = get_ig_business_id()
+    url = _url(f"/{ig_id}/media")
+    params = {
+        "media_type": "REELS",
+        "video_url": video_url,
+        "caption": caption,
+        "access_token": get_ig_access_token(),
+    }
+    logger.info("A criar Reel container para video_url=%s", video_url[:80] + "..." if len(video_url) > 80 else video_url)
+    resp = requests.post(url, params=params, timeout=30)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        logger.error("create_reel falhou: status=%s body=%s", resp.status_code, resp.text)
+        raise
+    data = resp.json()
+    creation_id = data.get("id")
+    if not creation_id:
+        logger.error("Resposta sem 'id': %s", data)
+        raise ValueError("Resposta da API sem container ID para Reel")
     return creation_id
 
 
@@ -87,15 +146,16 @@ def _wait_for_container(creation_id: str, max_wait: int = 60, interval: int = 3)
     )
 
 
-def publish_media(creation_id: str) -> str:
+def publish_media(creation_id: str, max_wait: int = 60) -> str:
     """
-    Publica o container criado por create_media.
+    Publica o container criado por create_media ou create_reel.
     Espera até o container estar FINISHED antes de chamar media_publish.
+    Para Reels/vídeo use max_wait=180 (processamento mais lento).
     """
     _check_config()
     ig_id = get_ig_business_id()
 
-    _wait_for_container(creation_id)
+    _wait_for_container(creation_id, max_wait=max_wait)
 
     url = _url(f"/{ig_id}/media_publish")
     params = {

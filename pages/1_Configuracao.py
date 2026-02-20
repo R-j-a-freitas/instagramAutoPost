@@ -403,11 +403,18 @@ st.subheader("6. Publicacao automatica")
 st.caption("Publica posts automaticamente na hora agendada no Sheet. Funciona com a app aberta ou via Task Scheduler.")
 
 from instagram_poster import autopublish
-from instagram_poster.config import get_autopublish_enabled, get_autopublish_interval
+from instagram_poster.config import (
+    get_autopublish_enabled,
+    get_autopublish_interval,
+    get_autopublish_reel_every_5,
+    get_autopublish_story_with_post,
+)
 
 _ap_running = autopublish.is_running()
 _ap_enabled = get_autopublish_enabled()
 _ap_interval = get_autopublish_interval()
+_ap_story = get_autopublish_story_with_post()
+_ap_reel = get_autopublish_reel_every_5()
 
 # Toggle on/off
 ap_enabled = st.toggle(
@@ -421,15 +428,31 @@ ap_interval = st.slider(
     key="config_autopublish_interval",
     help="A cada N minutos, verifica se ha posts prontos e publica automaticamente.",
 )
+ap_story = st.toggle(
+    "Publicar Story automaticamente com cada post",
+    value=_ap_story,
+    key="config_autopublish_story",
+    help="Quando um post e publicado (feed), publica tambem uma Story com a mesma imagem em formato vertical.",
+)
+ap_reel = st.toggle(
+    "Publicar Reel automaticamente a cada 5 posts",
+    value=_ap_reel,
+    key="config_autopublish_reel",
+    help="Quando ha 5 ou mais posts publicados, gera e publica um Reel com os ultimos 5 (8s/slide, fade, audio da pasta MUSIC).",
+)
 
 # Guardar alteracoes no .env
-if ap_enabled != _ap_enabled or ap_interval != _ap_interval:
+if ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_reel != _ap_reel:
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
+        "AUTOPUBLISH_STORY_WITH_POST": "true" if ap_story else "false",
+        "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
     })
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
+    config.set_runtime_override("AUTOPUBLISH_STORY_WITH_POST", "true" if ap_story else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
 
 # Botoes iniciar/parar
 col_ap1, col_ap2, _ = st.columns([1, 1, 2])

@@ -172,6 +172,8 @@ CLOUDINARY_API_SECRET: str = _optional("CLOUDINARY_API_SECRET", "")
 # --- Autopublish ---
 AUTOPUBLISH_ENABLED: str = _optional("AUTOPUBLISH_ENABLED", "false")
 AUTOPUBLISH_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_INTERVAL_MINUTES", "5")
+AUTOPUBLISH_STORY_WITH_POST: str = _optional("AUTOPUBLISH_STORY_WITH_POST", "false")
+AUTOPUBLISH_REEL_EVERY_5: str = _optional("AUTOPUBLISH_REEL_EVERY_5", "true")
 
 
 def get_autopublish_enabled() -> bool:
@@ -185,6 +187,18 @@ def get_autopublish_interval() -> int:
         return max(1, int(val))
     except (ValueError, TypeError):
         return 5
+
+
+def get_autopublish_story_with_post() -> bool:
+    """Se True, publica também uma Story no Instagram quando um post é publicado automaticamente."""
+    val = get_runtime_override("AUTOPUBLISH_STORY_WITH_POST") or AUTOPUBLISH_STORY_WITH_POST
+    return val.lower() in ("true", "1", "yes", "on")
+
+
+def get_autopublish_reel_every_5() -> bool:
+    """Se True, gera e publica um Reel automaticamente sempre que houver 5 posts (últimos 5 diferentes)."""
+    val = get_runtime_override("AUTOPUBLISH_REEL_EVERY_5") or AUTOPUBLISH_REEL_EVERY_5
+    return val.lower() in ("true", "1", "yes", "on")
 
 
 # --- Ambiente (dev/prod) ---

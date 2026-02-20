@@ -260,6 +260,53 @@ def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_p
     return url
 
 
+def _download_image(url: str) -> bytes:
+    """Descarrega uma imagem a partir de um URL público."""
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return resp.content
+
+
+def _image_to_story_frame(image_bytes: bytes) -> bytes:
+    """
+    Converte uma imagem quadrada (ex.: 1080x1080) num frame vertical 1080x1920
+    para Instagram Story: fundo desfocado da própria imagem e imagem centrada.
+    """
+    from PIL import Image, ImageFilter
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+    if w < 100 or h < 100:
+        raise ValueError("Imagem demasiado pequena para converter em Story")
+    sw, sh = 1080, 1920
+    # Fundo: imagem esticada para 1080x1920 e desfocada
+    bg = img.resize((sw, sh), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(radius=25))
+    # Quadrado central: redimensionar para 1080x1080 e colar ao centro
+    box_size = min(1080, w, h)
+    square = img.resize((box_size, box_size), Image.Resampling.LANCZOS)
+    x = (sw - square.width) // 2
+    y = (sh - square.height) // 2
+    bg.paste(square, (x, y))
+    buf = io.BytesIO()
+    bg.save(buf, format="PNG", quality=95)
+    return buf.getvalue()
+
+
+def get_story_image_url_from_feed_image(feed_image_url: str) -> str:
+    """
+    A partir do URL da imagem do post (feed), gera uma imagem 1080x1920 para
+    Story (fundo desfocado + imagem centrada) e faz upload para Cloudinary.
+    Devolve o URL público para usar em create_story.
+    """
+    if not (feed_image_url or "").strip():
+        raise ValueError("URL da imagem do post está vazio.")
+    logger.info("A gerar imagem Story a partir do post: %s", feed_image_url[:80])
+    image_bytes = _download_image(feed_image_url.strip())
+    story_bytes = _image_to_story_frame(image_bytes)
+    return upload_image_to_cloudinary(story_bytes, public_id_prefix="ig_story")
+
+
 _QUOTE_CARD_PROMPT = (
     "Beautiful square 1080x1080 image. Calm minimalist composition, "
     "soft gradient colors, peaceful atmosphere with gentle light. "

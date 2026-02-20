@@ -1,0 +1,9 @@
+{
+  "tracks": [
+    {"file": "calm_waves.mp3", "name": "Ondas calmas", "duration_s": 45},
+    {"file": "soft_piano.mp3", "name": "Piano suave", "duration_s": 38},
+    {"file": "morning_light.mp3", "name": "Luz da manha", "duration_s": 42},
+    {"file": "gentle_breeze.mp3", "name": "Brisa suave", "duration_s": 40},
+    {"file": "meditation.mp3", "name": "Meditacao", "duration_s": 50}
+  ]
+}

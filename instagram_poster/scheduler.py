@@ -7,7 +7,7 @@ from datetime import date, datetime, time
 from typing import Any, Literal, Optional
 
 from instagram_poster import ig_client, sheets_client
-from instagram_poster.config import get_image_provider
+from instagram_poster.config import get_autopublish_story_with_post, get_image_provider
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,41 @@ def publish_post(post: dict[str, Any]) -> str:
     creation_id = ig_client.create_media(image_url=image_url, caption=caption)
     media_id = ig_client.publish_media(creation_id)
     sheets_client.mark_published(row_index)
+    sheets_client.update_image_url(row_index, image_url)
+
+    # Publicar Story automaticamente com o mesmo conteúdo, se activado
+    if get_autopublish_story_with_post():
+        try:
+            from instagram_poster import autopublish, image_generator
+            story_url = image_generator.get_story_image_url_from_feed_image(image_url)
+            story_creation_id = ig_client.create_story(image_url=story_url)
+            story_media_id = ig_client.publish_media(story_creation_id)
+            autopublish.log_story_published(post, media_id=story_media_id)
+            logger.info("Story publicada automaticamente (post linha %s)", row_index)
+        except Exception as e:
+            logger.warning("Falha ao publicar Story automatica (post linha %s): %s", row_index, e)
+
     return media_id
+
+
+def publish_story_from_post(post: dict[str, Any]) -> tuple[bool, str, Optional[str]]:
+    """
+    Gera e publica uma Story no Instagram a partir da imagem de um post (feed).
+    Post deve ter image_url preenchido. Devolve (sucesso, mensagem, media_id ou None).
+    """
+    image_url = (post.get("image_url") or "").strip()
+    if not image_url:
+        return False, "O post não tem ImageURL.", None
+    try:
+        from instagram_poster import autopublish, image_generator
+        story_url = image_generator.get_story_image_url_from_feed_image(image_url)
+        creation_id = ig_client.create_story(image_url=story_url)
+        media_id = ig_client.publish_media(creation_id)
+        autopublish.log_story_published(post, media_id=media_id)
+        return True, f"Story publicada. Media ID: {media_id}", media_id
+    except Exception as e:
+        logger.exception("Erro ao publicar Story a partir do post")
+        return False, str(e), None
 
 
 def run_publish_next(

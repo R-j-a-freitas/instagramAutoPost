@@ -234,6 +234,22 @@ def mark_published(row_index: int) -> None:
     logger.info("Sheet atualizado: linha %s -> Status=posted, Published=yes", row_index)
 
 
+def update_image_url(row_index: int, image_url: str) -> None:
+    """Escreve o URL da imagem na coluna ImageURL da linha row_index (1-based)."""
+    if not (image_url or "").strip():
+        return
+    sheet = _get_sheet()
+    all_rows = sheet.get_all_values()
+    if not all_rows or row_index < 2 or row_index > len(all_rows):
+        raise ValueError(f"Linha inválida: {row_index}")
+    col = _parse_header_row(all_rows[0])
+    url_col = col.get(COL_IMAGE_URL)
+    if url_col is None:
+        raise ValueError("Sheet sem coluna ImageURL")
+    sheet.update_cell(row_index, url_col + 1, image_url.strip())
+    logger.info("ImageURL atualizado: linha %s", row_index)
+
+
 def get_row_by_index(row_index: int) -> Optional[dict[str, Any]]:
     """Obtém os dados de uma linha específica do sheet (row_index 1-based, 2 = primeira linha de dados)."""
     sheet = _get_sheet()
@@ -297,3 +313,67 @@ def get_last_date() -> Optional[str]:
         if date_idx < len(row) and row[date_idx].strip():
             return row[date_idx].strip()
     return None
+
+
+def get_published_rows_missing_image_url() -> list[dict[str, Any]]:
+    """
+    Devolve linhas com Published=yes mas ImageURL vazio.
+    Útil para preencher ImageURL em publicações antigas (sem republicar no Instagram).
+    """
+    sheet = _get_sheet()
+    all_rows = sheet.get_all_values()
+    if not all_rows:
+        return []
+    col = _parse_header_row(all_rows[0])
+    if COL_PUBLISHED not in col or COL_IMAGE_URL not in col:
+        return []
+    result = []
+    for i in range(1, len(all_rows)):
+        rec = _row_to_record(all_rows[i], col, sheet_row_index=i + 1)
+        if not rec:
+            continue
+        if (rec.get("published") or "").strip().lower() not in ("yes", "y", "1", "true"):
+            continue
+        if (rec.get("image_url") or "").strip():
+            continue
+        result.append(rec)
+    return result
+
+
+def get_published_posts_with_image() -> list[dict[str, Any]]:
+    """
+    Devolve todos os posts já publicados que têm ImageURL preenchido.
+    Ordenados por data (mais recente primeiro). Útil para escolher um post para Story.
+    """
+    sheet = _get_sheet()
+    all_rows = sheet.get_all_values()
+    if not all_rows:
+        return []
+    col = _parse_header_row(all_rows[0])
+    if COL_PUBLISHED not in col or COL_IMAGE_URL not in col or COL_DATE not in col:
+        return []
+    result = []
+    for i in range(1, len(all_rows)):
+        rec = _row_to_record(all_rows[i], col, sheet_row_index=i + 1)
+        if not rec:
+            continue
+        if (rec.get("published") or "").strip().lower() not in ("yes", "y", "1", "true"):
+            continue
+        if not (rec.get("image_url") or "").strip():
+            continue
+        result.append(rec)
+    # Ordenar por data descendente (mais recente primeiro)
+    def sort_key(r):
+        d = _parse_date(r.get("date") or "")
+        t = _parse_time(r.get("time") or "")
+        return (d or date.min, t or time(0, 0))
+    result.sort(key=sort_key, reverse=True)
+    return result
+
+
+def get_last_published_posts(n: int = 5) -> list[dict[str, Any]]:
+    """
+    Devolve os últimos N posts publicados com ImageURL preenchido, ordenados do mais recente para o mais antigo.
+    """
+    all_published = get_published_posts_with_image()
+    return all_published[:n]
