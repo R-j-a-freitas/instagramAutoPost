@@ -7,6 +7,14 @@ from instagram_poster import auto_clicker
 
 st.set_page_config(page_title="Auto Click | Instagram Auto Post", page_icon="🖱️", layout="wide")
 
+
+@st.fragment(run_every=2)
+def _poll_run_finished():
+    """Quando os ciclos terminam, atualiza a página para mostrar «Parado» e ativar Iniciar."""
+    if st.session_state.get("autoclick_was_running") and not auto_clicker.is_running():
+        st.session_state["autoclick_was_running"] = False
+        st.rerun()
+
 # Navegação
 nav1, nav2, nav3, _ = st.columns([1, 1, 1, 3])
 with nav1:
@@ -216,8 +224,12 @@ with col_btn_help:
         st.warning("Arranca primeiro o browser (passo 1), autentica e navega até à página; depois podes clicar em **Iniciar**.")
 
 if running:
+    st.session_state["autoclick_was_running"] = True
     rc = st.session_state.get("autoclick_num_cycles", 0)
     cycles_info = f"{rc} ciclos" if rc and rc > 0 else "ciclos infinitos"
     st.success(f"A correr: 5 cliques por ciclo + refresh. {cycles_info}. O rato move-se no browser já aberto.")
 else:
+    st.session_state["autoclick_was_running"] = False
     st.caption("Parado.")
+
+_poll_run_finished()

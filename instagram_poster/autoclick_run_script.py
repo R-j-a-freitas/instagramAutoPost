@@ -31,6 +31,12 @@ def _load_positions(positions_path: Path):
         sys.exit(1)
 
 
+def _is_connection_error(e: Exception) -> bool:
+    """Deteta EPIPE, broken pipe e erros de ligação ao browser."""
+    s = str(e).lower()
+    return "epipe" in s or "broken pipe" in s or "connection" in s or "target closed" in s
+
+
 def _run_click_loop(page, positions, interval_seconds: float, max_rounds: int) -> None:
     round_num = 0
     while True:
@@ -42,6 +48,8 @@ def _run_click_loop(page, positions, interval_seconds: float, max_rounds: int) -
                 time.sleep(0.25)
                 page.mouse.click(px, py)
             except Exception as e:
+                if _is_connection_error(e):
+                    return
                 print(f"Click em ({px},{py}) falhou: {e}", file=sys.stderr)
             time.sleep(max(0.5, interval_seconds))
         round_num += 1
@@ -51,6 +59,8 @@ def _run_click_loop(page, positions, interval_seconds: float, max_rounds: int) -
             page.reload(wait_until="domcontentloaded", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=10000)
         except Exception as e:
+            if _is_connection_error(e):
+                return
             print(f"Reload/wait: {e}", file=sys.stderr)
         time.sleep(max(1, interval_seconds))
 
@@ -99,8 +109,8 @@ def main():
             max_rounds = 0
 
     positions = _load_positions(positions_path)
-    if len(positions) < 2:
-        print("São necessárias pelo menos 2 posições na grelha.", file=sys.stderr)
+    if len(positions) < 1:
+        print("É necessária pelo menos 1 posição.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -112,31 +122,35 @@ def main():
         )
         sys.exit(1)
 
-    with sync_playwright() as p:
-        if use_cdp:
-            browser = p.chromium.connect_over_cdp(cdp_url)
-            try:
-                if not browser.contexts:
-                    print("Browser de sessão sem contextos.", file=sys.stderr)
-                    sys.exit(1)
-                context = browser.contexts[0]
-                if not context.pages:
-                    print("Browser de sessão sem páginas abertas.", file=sys.stderr)
-                    sys.exit(1)
-                page = context.pages[0]
-                _run_click_loop(page, positions, interval_seconds, max_rounds)
-            finally:
-                # Não fechar o browser: pertence à sessão
-                pass
-        else:
-            browser = p.chromium.launch(headless=False)
-            try:
-                context = browser.new_context()
-                page = context.new_page()
-                page.goto(url, timeout=60000)
-                _run_click_loop(page, positions, interval_seconds, max_rounds)
-            finally:
-                browser.close()
+    try:
+        with sync_playwright() as p:
+            if use_cdp:
+                browser = p.chromium.connect_over_cdp(cdp_url)
+                try:
+                    if not browser.contexts:
+                        print("Browser de sessão sem contextos.", file=sys.stderr)
+                        sys.exit(1)
+                    context = browser.contexts[0]
+                    if not context.pages:
+                        print("Browser de sessão sem páginas abertas.", file=sys.stderr)
+                        sys.exit(1)
+                    page = context.pages[0]
+                    _run_click_loop(page, positions, interval_seconds, max_rounds)
+                finally:
+                    pass
+            else:
+                browser = p.chromium.launch(headless=False)
+                try:
+                    context = browser.new_context()
+                    page = context.new_page()
+                    page.goto(url, timeout=60000)
+                    _run_click_loop(page, positions, interval_seconds, max_rounds)
+                finally:
+                    browser.close()
+    except Exception as e:
+        if _is_connection_error(e):
+            sys.exit(0)
+        raise
 
 
 if __name__ == "__main__":

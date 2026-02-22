@@ -17,3 +17,6 @@ __pycache__/
 instagramAutoPost/
 .autoclick_last_click.txt
 .autoclick_positions.json
+.autoclick_run_positions.json
+.autoclick_session_port.txt
+.autoclick_session_browser_data/

@@ -82,7 +82,12 @@ def main():
                 # add_init_script faz o overlay ser injetado em TODA a navegação (cada nova página)
                 page.add_init_script(preview_script)
                 page.goto(url, timeout=60000)
-                while browser.is_connected():
+                while True:
+                    try:
+                        if not browser.is_connected():
+                            break
+                    except Exception:
+                        break
                     time.sleep(1)
             finally:
                 try:
@@ -90,8 +95,12 @@ def main():
                 except Exception:
                     pass
     except Exception as e:
-        print(f"Erro: {e}", file=sys.stderr)
-        sys.exit(3)
+        err_str = str(e).lower()
+        if "epipe" in err_str or "broken pipe" in err_str:
+            pass
+        else:
+            print(f"Erro: {e}", file=sys.stderr)
+            sys.exit(3)
 
 
 if __name__ == "__main__":

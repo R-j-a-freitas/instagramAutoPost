@@ -16,8 +16,6 @@ from typing import List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_stop_event = threading.Event()
-_thread: Optional[threading.Thread] = None
 _preview_process: Optional[subprocess.Popen] = None
 _run_process: Optional[subprocess.Popen] = None
 _last_error: Optional[str] = None
@@ -63,8 +61,6 @@ def load_positions() -> List[Tuple[int, int]]:
 
 def is_running() -> bool:
     with _lock:
-        if _thread is not None and _thread.is_alive():
-            return True
         if _run_process is not None and _run_process.poll() is None:
             return True
         return False
@@ -140,7 +136,7 @@ def start_session_browser(url: str) -> None:
                         _session_process = None
                     if proc.returncode not in (0, None) and proc.stderr:
                         err = proc.stderr.read().decode("utf-8", errors="replace").strip()
-                        if err:
+                        if err and not _is_epipe_or_connection_err(err):
                             _last_error = err
             except Exception:
                 pass
@@ -244,8 +240,6 @@ def start_preview(url: str) -> None:
     with _lock:
         if _preview_process is not None and _preview_process.poll() is None:
             return
-        if _thread is not None and _thread.is_alive():
-            return
         _last_error = None
         _preview_process = None
     try:
@@ -276,7 +270,7 @@ def start_preview(url: str) -> None:
                         _preview_process = None
                     if proc.returncode != 0 and proc.stderr:
                         err = proc.stderr.read().decode("utf-8", errors="replace").strip()
-                        if err:
+                        if err and not _is_epipe_or_connection_err(err):
                             _last_error = err or f"Preview saiu com código {proc.returncode}"
             except Exception:
                 pass
@@ -310,6 +304,12 @@ def stop_preview() -> None:
         logger.info("Preview browser terminado.")
 
 
+def _is_epipe_or_connection_err(err: str) -> bool:
+    """Ignora EPIPE e erros de ligação ao fechar o browser (esperado)."""
+    s = err.lower()
+    return "epipe" in s or "broken pipe" in s or "target closed" in s
+
+
 def _wait_run_process(proc: subprocess.Popen) -> None:
     """Thread que espera pelo processo do ciclo e regista erro em stderr."""
     global _last_error, _run_process
@@ -320,7 +320,7 @@ def _wait_run_process(proc: subprocess.Popen) -> None:
                 _run_process = None
         if proc.returncode != 0 and proc.stderr:
             err = proc.stderr.read().decode("utf-8", errors="replace").strip()
-            if err:
+            if err and not _is_epipe_or_connection_err(err):
                 with _lock:
                     _last_error = err
     except Exception as e:
@@ -340,40 +340,43 @@ def start(
     max_rounds: Optional[int] = None,
 ) -> None:
     """
-    Inicia o ciclo de cliques.
-    - Se positions tiver 2+ posições: modo "5 Seguir + refresh" em SUBPROCESS (janela visível).
-      max_rounds=0 ou None = infinito.
-    - Caso contrário: clica em (x, y) a cada interval_seconds em thread. max_clicks=None = infinito.
+    Inicia o ciclo de cliques em SUBPROCESS (evita EPIPE no terminal do Streamlit).
+    - Se positions tiver 2+ posições: modo "5 Seguir + refresh". max_rounds=0 ou None = infinito.
+    - Caso contrário: clica em (x, y) a cada interval_seconds. max_clicks=None = infinito.
     """
-    global _thread, _run_process, _last_error
+    global _run_process, _last_error
     use_multi = positions and len(positions) >= 2
+    pos_list = positions if use_multi else [(x, y)]
+    max_r = (max_rounds if max_rounds is not None else 0) if use_multi else (max_clicks if max_clicks is not None else 0)
+
     with _lock:
-        if _thread is not None and _thread.is_alive():
-            return
         if _run_process is not None and _run_process.poll() is None:
             return
         _last_error = None
         _run_process = None
 
-    if use_multi:
-        import json
-        try:
-            data = [{"x": px, "y": py} for px, py in positions]
-            _RUN_POSITIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except Exception as e:
-            with _lock:
-                _last_error = f"Erro a guardar posições: {e}"
-            return
-        session_port = get_session_port()
-        if session_port is None:
-            with _lock:
-                _last_error = (
-                    "Browser de sessão não está disponível (porta CDP). Clica primeiro em «Arrancar browser», "
-                    "espera que a janela abra e autentica; depois usa «Iniciar»."
-                )
-            return
-        try:
-            project_root = _RUN_POSITIONS_FILE.parent
+    import json
+    try:
+        data = [{"x": px, "y": py} for px, py in pos_list]
+        _RUN_POSITIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as e:
+        with _lock:
+            _last_error = f"Erro a guardar posições: {e}"
+        return
+
+    session_port = get_session_port()
+    use_cdp = use_multi and (session_port is not None)
+    if use_multi and session_port is None:
+        with _lock:
+            _last_error = (
+                "Browser de sessão não está disponível (porta CDP). Clica primeiro em «Arrancar browser», "
+                "espera que a janela abra e autentica; depois usa «Iniciar»."
+            )
+        return
+
+    try:
+        project_root = _RUN_POSITIONS_FILE.parent
+        if use_cdp:
             cmd = [
                 sys.executable,
                 "-m",
@@ -382,50 +385,45 @@ def start(
                 str(session_port),
                 str(_RUN_POSITIONS_FILE.resolve()),
                 str(interval_seconds),
-                str(max_rounds if max_rounds is not None else 0),
+                str(max_r),
             ]
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                cwd=str(project_root),
-            )
-            with _lock:
-                _run_process = proc
-            watcher = threading.Thread(target=_wait_run_process, args=(proc,), daemon=True)
-            watcher.start()
-            logger.info(
-                "Auto-clicker started (subprocess, CDP): interval=%ss, positions=%s, max_rounds=%s",
-                interval_seconds, len(positions), max_rounds,
-            )
-        except FileNotFoundError:
-            with _lock:
-                _last_error = "Python ou módulo não encontrado. Verifica o ambiente."
-        except Exception as e:
-            with _lock:
-                _last_error = str(e)
-            logger.exception("Auto-clicker subprocess start failed")
-        return
-
-    _stop_event.clear()
-    with _lock:
-        _thread = threading.Thread(
-            target=_run_loop,
-            args=(url, x, y, interval_seconds, max_clicks, positions, max_rounds),
-            daemon=True,
+        else:
+            cmd = [
+                sys.executable,
+                "-m",
+                "instagram_poster.autoclick_run_script",
+                url.strip(),
+                str(_RUN_POSITIONS_FILE.resolve()),
+                str(interval_seconds),
+                str(max_r),
+            ]
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            cwd=str(project_root),
         )
-        _thread.start()
-    logger.info(
-        "Auto-clicker started (thread): url=%s, interval=%ss, max_rounds=%s",
-        url, interval_seconds, max_rounds,
-    )
+        with _lock:
+            _run_process = proc
+        watcher = threading.Thread(target=_wait_run_process, args=(proc,), daemon=True)
+        watcher.start()
+        logger.info(
+            "Auto-clicker started (subprocess, %s): interval=%ss, positions=%s, max=%s",
+            "CDP" if use_cdp else "URL", interval_seconds, len(pos_list), max_r,
+        )
+    except FileNotFoundError:
+        with _lock:
+            _last_error = "Python ou módulo não encontrado. Verifica o ambiente."
+    except Exception as e:
+        with _lock:
+            _last_error = str(e)
+        logger.exception("Auto-clicker subprocess start failed")
 
 
 def stop() -> None:
-    """Marca para parar; termina o subprocess ou a thread do ciclo."""
+    """Termina o subprocess do ciclo de cliques."""
     global _run_process
-    _stop_event.set()
     with _lock:
         proc = _run_process
         _run_process = None
@@ -443,95 +441,3 @@ def stop() -> None:
         logger.info("Auto-clicker subprocess terminado.")
     logger.info("Auto-clicker stop requested")
 
-
-def _run_loop(
-    url: str,
-    x: int,
-    y: int,
-    interval_seconds: float,
-    max_clicks: Optional[int] = None,
-    positions: Optional[List[Tuple[int, int]]] = None,
-    max_rounds: Optional[int] = None,
-) -> None:
-    global _last_error
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        with _lock:
-            _last_error = "Playwright não instalado. Executa: pip install playwright e python -m playwright install chromium"
-        return
-    use_multi = positions and len(positions) >= 2
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
-            try:
-                context = browser.new_context()
-                page = context.new_page()
-                page.goto(url, timeout=60000)
-                if use_multi:
-                    _run_loop_multi(page, positions, interval_seconds, max_rounds)
-                else:
-                    _run_loop_single(page, x, y, interval_seconds, max_clicks)
-            finally:
-                browser.close()
-    except Exception as e:
-        logger.exception("Auto-clicker error")
-        with _lock:
-            _last_error = str(e)
-
-
-def _run_loop_single(
-    page,
-    x: int,
-    y: int,
-    interval_seconds: float,
-    max_clicks: Optional[int] = None,
-) -> None:
-    count = 0
-    while not _stop_event.is_set():
-        if max_clicks is not None and count >= max_clicks:
-            break
-        if _stop_event.wait(timeout=interval_seconds):
-            break
-        if max_clicks is not None and count >= max_clicks:
-            break
-        try:
-            page.mouse.click(x, y)
-            count += 1
-        except Exception as e:
-            logger.warning("Click at (%s, %s) failed: %s", x, y, e)
-
-
-def _run_loop_multi(
-    page,
-    positions: List[Tuple[int, int]],
-    interval_seconds: float,
-    max_rounds: Optional[int] = None,
-) -> None:
-    """Clica em cada posição (cursor move-se visivelmente), refresh, espera carregar, repete max_rounds vezes (0 = infinito)."""
-    round_num = 0
-    while not _stop_event.is_set():
-        if max_rounds is not None and max_rounds > 0 and round_num >= max_rounds:
-            break
-        for i, (px, py) in enumerate(positions):
-            if _stop_event.is_set():
-                return
-            try:
-                page.mouse.move(px, py)
-                time.sleep(0.25)
-                page.mouse.click(px, py)
-                logger.info("Ronda %s — Click %s/%s em (%s, %s)", round_num + 1, i + 1, len(positions), px, py)
-            except Exception as e:
-                logger.warning("Click at (%s, %s) failed: %s", px, py, e)
-            if _stop_event.wait(timeout=max(0.5, interval_seconds)):
-                return
-        round_num += 1
-        if _stop_event.is_set():
-            return
-        try:
-            page.reload(wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception as e:
-            logger.warning("Reload/wait failed: %s", e)
-        if _stop_event.wait(timeout=max(1, interval_seconds)):
-            return

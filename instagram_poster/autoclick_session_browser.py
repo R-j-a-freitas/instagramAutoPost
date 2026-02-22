@@ -130,7 +130,12 @@ def main():
                 if cdp_port != _CDP_PORT_DEFAULT:
                     print(f"CDP na porta {cdp_port} (9222 ocupada).", file=sys.stderr, flush=True)
                 # Manter vivo como no preview: while browser.is_connected()
-                while browser.is_connected():
+                while True:
+                    try:
+                        if not browser.is_connected():
+                            break
+                    except Exception:
+                        break
                     time.sleep(1)
             except KeyboardInterrupt:
                 pass
