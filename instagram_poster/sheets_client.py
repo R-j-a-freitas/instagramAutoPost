@@ -151,9 +151,11 @@ def get_next_ready_post(today: Optional[date] = None, now: Optional[time] = None
     Ordenação: Date, Time.
     """
     today = today or date.today()
+    now_time = now
     sheet = _get_sheet()
     all_rows = sheet.get_all_values()
     if not all_rows:
+        logger.info("get_next_ready_post: sheet vazio")
         return None
     col = _parse_header_row(all_rows[0])
     if COL_DATE not in col or COL_STATUS not in col or COL_PUBLISHED not in col:
@@ -174,16 +176,29 @@ def get_next_ready_post(today: Optional[date] = None, now: Optional[time] = None
             continue
         if d > today:
             continue
-        if d == today and now is not None:
+        if d == today and now_time is not None:
             t = _parse_time(rec["time"])
-            if t is not None and t > now:
+            if t is not None and t > now_time:
                 continue
         candidates.append((d, _parse_time(rec["time"]) or time(0, 0), rec))
 
     if not candidates:
+        logger.info(
+            "get_next_ready_post: 0 candidatos (critérios: Date<=%s, Time<=%s, Status=ready, Published vazio)",
+            today,
+            now_time,
+        )
         return None
     candidates.sort(key=lambda x: (x[0], x[1]))
-    return candidates[0][2]
+    chosen = candidates[0][2]
+    logger.info(
+        "get_next_ready_post: %s candidato(s), próximo: linha %s (%s %s)",
+        len(candidates),
+        chosen.get("row_index"),
+        chosen.get("date", ""),
+        chosen.get("time", ""),
+    )
+    return chosen
 
 
 def get_upcoming_posts(n: int = 14, from_date: Optional[date] = None) -> list[dict[str, Any]]:

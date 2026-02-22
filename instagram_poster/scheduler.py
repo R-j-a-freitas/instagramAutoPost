@@ -3,6 +3,7 @@ Lógica de escolha do próximo post e de publicação.
 Acionado por botão na UI (sem cron nem loops dentro do Streamlit).
 """
 import logging
+import time as _time
 from datetime import date, datetime, time
 from typing import Any, Literal, Optional
 
@@ -11,6 +12,39 @@ from instagram_poster.config import get_autopublish_story_with_post, get_image_p
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 
 logger = logging.getLogger(__name__)
+
+_SHEET_UPDATE_RETRIES = 3
+_SHEET_UPDATE_RETRY_DELAY_SEC = 2
+
+
+def _update_sheet_after_publish(row_index: int, image_url: str) -> None:
+    """
+    Marca a linha como publicada e atualiza ImageURL no Sheet, com retry.
+    Se falhar após todos os retries, regista o erro em log (e no autopublish se disponível)
+    mas não levanta exceção — o post já foi publicado no Instagram.
+    """
+    last_error = None
+    for attempt in range(1, _SHEET_UPDATE_RETRIES + 1):
+        try:
+            sheets_client.mark_published(row_index)
+            sheets_client.update_image_url(row_index, image_url)
+            logger.info("Sheet atualizado: linha %s -> Published=yes, ImageURL (tentativa %s)", row_index, attempt)
+            return
+        except Exception as e:
+            last_error = e
+            logger.warning("Falha a atualizar Sheet (linha %s, tentativa %s/%s): %s", row_index, attempt, _SHEET_UPDATE_RETRIES, e)
+            if attempt < _SHEET_UPDATE_RETRIES:
+                _time.sleep(_SHEET_UPDATE_RETRY_DELAY_SEC)
+    msg = (
+        f"Sheet não atualizado após {_SHEET_UPDATE_RETRIES} tentativas (linha {row_index}). "
+        f"O post foi publicado no Instagram. Marca manualmente Published=yes e ImageURL na linha {row_index}. Erro: {last_error}"
+    )
+    logger.error(msg)
+    try:
+        from instagram_poster import autopublish
+        autopublish._add_log_entry(False, msg, entry_type="error")
+    except Exception:
+        pass
 
 
 def select_post_to_publish(
@@ -76,8 +110,7 @@ def publish_post(post: dict[str, Any]) -> str:
 
     creation_id = ig_client.create_media(image_url=image_url, caption=caption)
     media_id = ig_client.publish_media(creation_id)
-    sheets_client.mark_published(row_index)
-    sheets_client.update_image_url(row_index, image_url)
+    _update_sheet_after_publish(row_index, image_url)
 
     # Publicar Story automaticamente com o mesmo conteúdo, se activado
     if get_autopublish_story_with_post():
@@ -85,7 +118,7 @@ def publish_post(post: dict[str, Any]) -> str:
             from instagram_poster import autopublish, image_generator
             story_url = image_generator.get_story_image_url_from_feed_image(image_url)
             story_creation_id = ig_client.create_story(image_url=story_url)
-            story_media_id = ig_client.publish_media(story_creation_id)
+            story_media_id = ig_client.publish_media(story_creation_id, max_wait=180)
             autopublish.log_story_published(post, media_id=story_media_id)
             logger.info("Story publicada automaticamente (post linha %s)", row_index)
         except Exception as e:
@@ -106,7 +139,7 @@ def publish_story_from_post(post: dict[str, Any]) -> tuple[bool, str, Optional[s
         from instagram_poster import autopublish, image_generator
         story_url = image_generator.get_story_image_url_from_feed_image(image_url)
         creation_id = ig_client.create_story(image_url=story_url)
-        media_id = ig_client.publish_media(creation_id)
+        media_id = ig_client.publish_media(creation_id, max_wait=180)
         autopublish.log_story_published(post, media_id=media_id)
         return True, f"Story publicada. Media ID: {media_id}", media_id
     except Exception as e:
@@ -124,11 +157,21 @@ def run_publish_next(
     post = select_post_to_publish(mode="next", today=today, now=now)
     if not post:
         return False, "Nenhum post pronto para publicar (Status=ready, Published vazio, Date <= hoje).", None, None
+    row_index = post.get("row_index")
+    # Re-leitura opcional: evita republicar se o Sheet foi atualizado por outro processo
+    fresh = sheets_client.get_row_by_index(row_index)
+    if fresh and (str(fresh.get("published") or "").strip().lower() in ("yes", "y", "1", "true")):
+        logger.info("Linha %s já está publicada no Sheet; a ignorar para evitar duplicado.", row_index)
+        return False, f"Linha {row_index} já está publicada no Sheet. Pode ter sido atualizada por outro processo.", None, post
+    post_date = post.get("date", "")
+    post_time = post.get("time", "")
+    logger.info("A publicar post: linha %s, agendado para %s %s", row_index, post_date, post_time)
     try:
         media_id = publish_post(post)
+        logger.info("Post publicado: linha %s, media_id=%s", row_index, media_id)
         return True, f"Post publicado com sucesso. Media ID: {media_id}", media_id, post
     except Exception as e:
-        logger.exception("Erro ao publicar próximo post")
+        logger.exception("Erro ao publicar próximo post (linha %s): %s", row_index, e)
         return False, str(e), None, post
 
 

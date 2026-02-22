@@ -11,94 +11,44 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from instagram_poster import config
-from instagram_poster.config import get_pollinations_api_key
+from instagram_poster.config import (
+    get_content_extra_prompt,
+    get_content_system_prompt_override,
+    get_default_content_system_prompt,
+    get_pollinations_api_key,
+)
 from instagram_poster.sheets_client import append_rows, get_last_date
 
 logger = logging.getLogger(__name__)
 
-_CONTENT_SYSTEM_PROMPT = r"""You are a content creator for the Instagram account @keepcalmnbepositive.
 
-## Account context
-
-- Niche: personal development, positive mindset, self-compassion, emotional healing, healthy boundaries, rest, slow growth.
-- Tone: calm, encouraging, practical. No toxic positivity, no aggressive "hustle" culture.
-- Goal: help people think and feel in a kinder, more conscious and responsible way, without guilt or unrealistic demands.
-
-## Google Sheet structure
-
-Each row has these columns (fixed order):
-
-1. Date – post date (YYYY-MM-DD)
-2. Time – post time (HH:MM)
-3. Image Text – the short quote/phrase that will be overlaid on the image
-4. Caption – the post caption in English, a mini-text/reflection with 2-6 short paragraphs
-5. Gemini_Prompt – technical prompt to generate the background image, in English, describing what the image should show (NO text in the image)
-6. Status – always "ready"
-7. Published – always empty string
-8. ImageURL – always empty string
-9. Image Prompt – always "yes"
-
-## Rules for each field
-
-### Date and Time
-- For Date use literally the placeholder "YYYY-MM-DD" (will be filled later).
-- For Time always use "21:30".
-
-### Image Text (quote)
-- Short, strong phrase that stands on its own.
-- In simple English, first person, aligned with the account style.
-- Style examples (do NOT repeat these, only use as reference):
-  - "Today I focus on what I can do, not on what I can't control."
-  - "Resting is not losing time. Resting prepares me for the time ahead."
-  - "I give myself permission to grow at my own pace."
-- Avoid empty cliches like "good vibes only", "think positive".
-- Each quote should focus on a concrete micro-theme (self-talk, boundaries, rest, gratitude, anxiety, etc.).
-
-### Caption
-- Text in English, 2-6 short paragraphs.
-- Typical structure:
-  - 1-2 sentences expanding the quote idea.
-  - Practical explanation of the concept.
-  - 1 small exercise/action for today (e.g., "Today, try...", "Write down...", "Notice when...").
-  - 0-2 relevant hashtags at the end (ideally include #keepcalmnbepositive).
-- Style: direct conversation with the reader ("you", "your mind", "your body"). Gentle but honest.
-
-### Gemini_Prompt (for image generation)
-- Written in English.
-- Describes a concrete image that matches the quote and caption.
-- IMPORTANT rules:
-  - Do NOT include any text, letters, or words in the image.
-  - Mention: main scene, environment, color palette, emotion/mood.
-  - If there are people: no close-up faces; can be from behind, silhouette, or distant.
-- Example style (do NOT copy, only reference for detail level):
-  - "Serene breathing moment: a person sitting near a window with plants, hands resting gently on their chest. Soft blue and green tones, lots of calm space. No text in the image."
-
-### Status, Published, ImageURL, Image Prompt
-- Status: always "ready"
-- Published: always ""
-- ImageURL: always ""
-- Image Prompt: always "yes"
-
-## Output format
-
-Return a JSON object with a single key "posts" containing an array of objects.
-Each object must have exactly these keys: "Date", "Time", "Image Text", "Caption", "Gemini_Prompt", "Status", "Published", "ImageURL", "Image Prompt".
-
-Vary the micro-themes across posts. Be creative but stay consistent with @keepcalmnbepositive style."""
+def _get_system_prompt() -> str:
+    """Devolve o prompt de sistema a usar: override do ficheiro se existir, senão o padrão."""
+    override = get_content_system_prompt_override()
+    return override if override else get_default_content_system_prompt()
 
 
-def _generate_content(n: int, api_key: str) -> list[dict]:
+def _generate_content(
+    n: int,
+    api_key: str,
+    extra_prompt: Optional[str] = None,
+) -> list[dict]:
     """Chama a API de texto do Pollinations para gerar N posts."""
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    system_prompt = _get_system_prompt()
+    user_base = f"Generate {n} new content rows as a JSON object with key 'posts' containing an array. Use 'YYYY-MM-DD' for Date. Make all {n} posts with varied micro-themes."
+    extra = (extra_prompt or "").strip() or (get_content_extra_prompt() or "").strip()
+    if extra:
+        user_base += f" Current focus or themes to incorporate in this batch: {extra}"
+
     payload = {
         "model": "openai",
         "messages": [
-            {"role": "system", "content": _CONTENT_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Generate {n} new content rows as a JSON object with key 'posts' containing an array. Use 'YYYY-MM-DD' for Date. Make all {n} posts with varied micro-themes."},
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_base},
         ],
         "response_format": {"type": "json_object"},
     }
@@ -181,6 +131,13 @@ with col_cfg1:
 with col_cfg2:
     start_date = st.date_input("Data do primeiro post", value=_default_start)
 
+focus_this_run = st.text_input(
+    "Foco desta geração (opcional)",
+    placeholder="Ex.: temas de outono, limites saudáveis. Deixar vazio usa o foco definido em Configuração.",
+    key="content_focus_this_run",
+    help="Sobrescreve apenas para esta execução o foco guardado em Configuração.",
+)
+
 api_key = get_pollinations_api_key()
 if not api_key:
     st.warning("Configura a POLLINATIONS_API_KEY na pagina Configuracao para usar a geracao de conteudo.")
@@ -188,7 +145,8 @@ if not api_key:
 if st.button("Gerar conteudo", type="primary", disabled=not api_key):
     with st.spinner(f"A gerar {n_posts} posts com IA... (pode demorar 30-60s)"):
         try:
-            posts = _generate_content(n_posts, api_key)
+            extra = (focus_this_run or "").strip() or None
+            posts = _generate_content(n_posts, api_key, extra_prompt=extra)
             if not posts:
                 st.error("A IA nao devolveu posts. Tenta novamente.")
             else:

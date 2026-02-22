@@ -16,7 +16,7 @@ from instagram_poster.config import (
     CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME,
-    CLOUDINARY_URL,
+    get_cloudinary_url,
     get_pollinations_api_key,
 )
 
@@ -24,32 +24,128 @@ logger = logging.getLogger(__name__)
 
 _ASSETS_MUSIC = Path(__file__).resolve().parent.parent / "assets" / "music"
 _MUSIC_FOLDER = _ASSETS_MUSIC / "MUSIC"
+_ASSETS_ROOT = Path(__file__).resolve().parent.parent / "assets"
+_REELS_USED_ROWS_FILE = _ASSETS_ROOT / "reels_used_rows.json"
 
 
-def get_available_music_tracks() -> list[dict[str, Any]]:
-    """Lê assets/music/metadata.json e devolve lista de faixas em assets/music/MUSIC/ (com file existente)."""
+def get_reel_used_row_indices() -> set[int]:
+    """Lê assets/reels_used_rows.json e devolve o conjunto de row_index já usados em Reels."""
+    if not _REELS_USED_ROWS_FILE.exists():
+        return set()
+    try:
+        with open(_REELS_USED_ROWS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return set(int(x) for x in data if isinstance(x, (int, float)))
+
+
+def mark_posts_used_in_reel(row_indices: list[int]) -> None:
+    """Regista os row_index como usados em Reels (persiste em assets/reels_used_rows.json)."""
+    if not row_indices:
+        return
+    current = get_reel_used_row_indices()
+    current.update(row_indices)
+    _ASSETS_ROOT.mkdir(parents=True, exist_ok=True)
+    payload = sorted(current)
+    try:
+        with open(_REELS_USED_ROWS_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=0)
+        logger.info("Reels: %d linha(s) marcadas como usadas em Reel (total: %d)", len(row_indices), len(payload))
+    except OSError as e:
+        logger.warning("Não foi possível gravar reels_used_rows.json: %s", e)
+
+
+def get_posts_for_reel(n: int, allow_reuse: bool = False) -> list[dict[str, Any]]:
+    """
+    Devolve até n posts publicados elegíveis para Reel.
+    Se allow_reuse for False, exclui posts cujo row_index já foi usado em algum Reel.
+    """
+    from instagram_poster.sheets_client import get_last_published_posts
+    all_posts = get_last_published_posts(n=30)
+    if not all_posts:
+        return []
+    if allow_reuse:
+        return all_posts[:n]
+    used = get_reel_used_row_indices()
+    eligible = [p for p in all_posts if (p.get("row_index") or 0) not in used]
+    return eligible[:n]
+
+
+def _scan_music_folder() -> list[dict[str, Any]]:
+    """Varre assets/music/MUSIC/ e devolve uma entrada por ficheiro .mp3 existente."""
+    if not _MUSIC_FOLDER.exists():
+        logger.warning("Pasta de música não encontrada: %s", _MUSIC_FOLDER)
+        return []
+    result = []
+    for path in sorted(_MUSIC_FOLDER.glob("*.mp3")):
+        name = path.stem
+        result.append({
+            "file": path.name,
+            "path": str(path),
+            "name": name,
+            "duration_s": 0,
+        })
+    return result
+
+
+def _load_metadata_overrides() -> dict[str, dict[str, Any]]:
+    """Carrega metadata.json e devolve um dict filename -> {name?, duration_s?} para enriquecer as faixas."""
     meta_path = _ASSETS_MUSIC / "metadata.json"
     if not meta_path.exists():
-        return []
+        return {}
     try:
         with open(meta_path, encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return []
-    tracks = data.get("tracks", [])
-    result = []
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("metadata.json não usado: %s", e)
+        return {}
+    overrides = {}
+    for t in data.get("tracks", []):
+        if isinstance(t, dict) and t.get("file"):
+            overrides[t["file"]] = t
+    return overrides
+
+
+def _rebuild_metadata_json(tracks: list[dict[str, Any]]) -> None:
+    """Reescreve assets/music/metadata.json para reflectir a lista actual de faixas (ficheiros na pasta)."""
+    _ASSETS_MUSIC.mkdir(parents=True, exist_ok=True)
+    meta_path = _ASSETS_MUSIC / "metadata.json"
+    payload = {
+        "tracks": [
+            {"file": t["file"], "name": t["name"], "duration_s": t.get("duration_s", 0)}
+            for t in tracks
+        ]
+    }
+    try:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        logger.info("metadata.json actualizado com %d faixa(s) em %s", len(tracks), meta_path)
+    except OSError as e:
+        logger.warning("Não foi possível escrever metadata.json: %s", e)
+
+
+def get_available_music_tracks(rebuild_json: bool = True) -> list[dict[str, Any]]:
+    """
+    Devolve as faixas de música disponíveis em assets/music/MUSIC/.
+    A lista é construída a partir dos ficheiros .mp3 existentes na pasta. Se rebuild_json for True
+    (default), o metadata.json é reconstruído para reflectir as músicas actuais (útil no autopost e ao criar Reel).
+    """
+    tracks = _scan_music_folder()
+    overrides = _load_metadata_overrides()
     for t in tracks:
-        if not isinstance(t, dict) or "file" not in t:
-            continue
-        path = _MUSIC_FOLDER / t["file"]
-        if path.exists():
-            result.append({
-                "file": t["file"],
-                "path": str(path),
-                "name": t.get("name", t["file"]),
-                "duration_s": t.get("duration_s", 0),
-            })
-    return result
+        if t["file"] in overrides:
+            o = overrides[t["file"]]
+            if o.get("name"):
+                t["name"] = o["name"]
+            if "duration_s" in o:
+                t["duration_s"] = o["duration_s"]
+    if rebuild_json and tracks:
+        _rebuild_metadata_json(tracks)
+    logger.info("Encontradas %d faixa(s) de música em %s", len(tracks), _MUSIC_FOLDER)
+    return tracks
 
 
 def generate_caption_for_posts(posts: list[dict[str, Any]]) -> str:
@@ -185,8 +281,9 @@ def upload_video_to_cloudinary(video_bytes: bytes) -> str:
     except ImportError:
         raise ImportError("Instala o pacote cloudinary: pip install cloudinary") from None
 
-    if CLOUDINARY_URL and CLOUDINARY_URL.strip().startswith("cloudinary://"):
-        cloudinary.config(cloudinary_url=CLOUDINARY_URL)
+    cloudinary_url = get_cloudinary_url()
+    if cloudinary_url and cloudinary_url.strip().startswith("cloudinary://"):
+        cloudinary.config(cloudinary_url=cloudinary_url)
     elif CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
         cloudinary.config(
             cloud_name=CLOUDINARY_CLOUD_NAME,

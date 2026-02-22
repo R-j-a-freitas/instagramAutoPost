@@ -32,6 +32,10 @@ from instagram_poster.config import (
     get_autopublish_enabled,
     get_autopublish_interval,
     get_autopublish_reel_every_5,
+    get_autopublish_reel_reuse_interval_minutes,
+    get_autopublish_reel_reuse_schedule_enabled,
+    get_autopublish_story_reuse_interval_minutes,
+    get_autopublish_story_reuse_schedule_enabled,
     get_autopublish_story_with_post,
 )
 from instagram_poster.env_utils import update_env_vars
@@ -40,7 +44,11 @@ _ap_running = autopublish.is_running()
 _ap_enabled = get_autopublish_enabled()
 _ap_interval = get_autopublish_interval()
 _ap_story = get_autopublish_story_with_post()
+_ap_story_reuse = get_autopublish_story_reuse_schedule_enabled()
+_ap_story_reuse_interval = get_autopublish_story_reuse_interval_minutes()
 _ap_reel = get_autopublish_reel_every_5()
+_ap_reel_reuse = get_autopublish_reel_reuse_schedule_enabled()
+_ap_reel_reuse_interval = get_autopublish_reel_reuse_interval_minutes()
 
 # ========== Menu Autopublish ==========
 st.subheader("Menu Autopublish")
@@ -62,25 +70,81 @@ ap_story = st.toggle(
     key="ap_menu_story",
     help="Quando um post e publicado (feed), publica tambem uma Story com a mesma imagem em formato vertical.",
 )
+col_story_reuse_toggle, col_story_reuse_time, col_story_reuse_unit = st.columns([2, 1, 0.5])
+with col_story_reuse_toggle:
+    ap_story_reuse = st.toggle(
+        "Criar Stories com posts já usados a cada",
+        value=_ap_story_reuse,
+        key="ap_menu_story_reuse",
+        help="Publica uma Story com a imagem do ultimo post publicado no intervalo definido ao lado.",
+    )
+with col_story_reuse_time:
+    ap_story_reuse_interval_hours = st.number_input(
+        "horas",
+        min_value=0.5,
+        max_value=168.0,
+        value=round(_ap_story_reuse_interval / 60, 1),
+        step=0.5,
+        key="ap_menu_story_reuse_interval",
+        label_visibility="collapsed",
+    )
+with col_story_reuse_unit:
+    st.caption("h")
 ap_reel = st.toggle(
-    "Publicar Reel automaticamente a cada 5 posts",
+    "Publicar Reel automaticamente a cada 5 posts nunca usados em Reels",
     value=_ap_reel,
     key="ap_menu_reel",
-    help="Quando ha 5 ou mais posts publicados, gera e publica um Reel com os ultimos 5 (8s/slide, fade, audio da pasta MUSIC).",
+    help="Critério: 5 posts já publicados no Sheet (com ImageURL) que ainda não tenham sido usados em nenhum Reel (registo em assets/reels_used_rows.json). Gera e publica um Reel (8s/slide, fade, áudio da pasta MUSIC). Não significa «5 posts novos desde o último Reel».",
 )
+col_reuse_toggle, col_reuse_time, col_reuse_unit = st.columns([2, 1, 0.5])
+with col_reuse_toggle:
+    ap_reel_reuse = st.toggle(
+        "Criar Reels com posts já usados a cada",
+        value=_ap_reel_reuse,
+        key="ap_menu_reel_reuse",
+        help="Gera e publica um Reel com os ultimos 5 posts (podem ser ja usados em Reels) no intervalo definido ao lado.",
+    )
+with col_reuse_time:
+    ap_reel_reuse_interval_hours = st.number_input(
+        "horas",
+        min_value=0.5,
+        max_value=168.0,
+        value=round(_ap_reel_reuse_interval / 60, 1),
+        step=0.5,
+        key="ap_menu_reel_reuse_interval",
+        label_visibility="collapsed",
+    )
+with col_reuse_unit:
+    st.caption("h")
 
 # Guardar alteracoes no .env
-if ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_reel != _ap_reel:
+ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
+ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
+if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
+        or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
         "AUTOPUBLISH_STORY_WITH_POST": "true" if ap_story else "false",
+        "AUTOPUBLISH_STORY_REUSE_SCHEDULE": "true" if ap_story_reuse else "false",
+        "AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES": str(ap_story_reuse_interval),
         "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
+        "AUTOPUBLISH_REEL_REUSE_SCHEDULE": "true" if ap_reel_reuse else "false",
+        "AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES": str(ap_reel_reuse_interval),
     })
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
     config.set_runtime_override("AUTOPUBLISH_STORY_WITH_POST", "true" if ap_story else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "true" if ap_story_reuse else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", str(ap_story_reuse_interval))
     config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "true" if ap_reel_reuse else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", str(ap_reel_reuse_interval))
+
+# Se autopublish esta activado mas o thread nao corre, arrancar automaticamente (evita "bloqueado")
+if ap_enabled and not _ap_running:
+    autopublish.start_background_loop(interval_minutes=ap_interval)
+    st.rerun()
 
 # Botoes iniciar / parar
 col_btn1, col_btn2, _ = st.columns([1, 1, 2])
@@ -102,7 +166,11 @@ with col_btn2:
 
 # Estado
 if _ap_running:
-    st.success(f"Autopublish activo (cada {_ap_interval} min)")
+    effective = autopublish.get_effective_interval_minutes()
+    interval_display = effective if effective is not None else _ap_interval
+    st.success(f"Autopublish activo (intervalo efectivo: {interval_display} min)")
+    if effective is not None and effective != _ap_interval:
+        st.caption("O slider foi alterado; para usar o novo intervalo, para e volta a iniciar.")
     reel_status = "**Reel auto:** activo (a cada 5 posts)" if ap_reel else "**Reel auto:** inactivo"
     st.caption(reel_status)
 elif ap_enabled:
@@ -141,7 +209,16 @@ if ap_log:
     published_entries = [e for e in ap_log if e.get("type") == "publish"]
     reel_entries = [e for e in ap_log if e.get("type") == "reel"]
     error_entries = [e for e in ap_log if e.get("type") == "error"]
+    check_entries = [e for e in ap_log if e.get("type") == "check"]
     other_entries = [e for e in ap_log if e.get("type") not in ("publish", "error", "check", "reel")]
+
+    if check_entries:
+        with st.expander(f"Verificações ({len(check_entries)})", expanded=True):
+            st.caption("Cada verificação corresponde a um ciclo do intervalo definido. Mostradas as mais recentes.")
+            for entry in reversed(check_entries[:30]):
+                ts = entry["timestamp"].strftime("%H:%M:%S")
+                msg = entry.get("message", "")
+                st.text(f"[{ts}] {msg}")
 
     if reel_entries:
         with st.expander(f"Reels publicados automaticamente ({len(reel_entries)})", expanded=True):

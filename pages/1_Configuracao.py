@@ -3,6 +3,7 @@ Configuração dos acessos: Google Sheets, Instagram, geração de imagens, Clou
 Ao carregar JSON ou verificar, as variáveis são atualizadas no .env.
 """
 import json
+import os
 import re
 from pathlib import Path
 import streamlit as st
@@ -16,6 +17,7 @@ from instagram_poster.env_utils import (
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 from instagram_poster.sheets_client import get_all_rows_with_image_text, update_gemini_prompt
 from instagram_poster.verification import (
+    check_instagram_api_status,
     verify_cloudinary,
     verify_image_provider,
     verify_google_sheets,
@@ -45,8 +47,21 @@ def _init_config_session():
         st.session_state.config_openai_api_key = config.get_openai_api_key() or ""
     if "config_pollinations_api_key" not in st.session_state:
         st.session_state.config_pollinations_api_key = config.get_pollinations_api_key() or ""
+    if "config_huggingface_token" not in st.session_state:
+        st.session_state.config_huggingface_token = config.get_huggingface_token() or ""
+    if "config_firefly_client_id" not in st.session_state:
+        st.session_state.config_firefly_client_id = config.get_firefly_client_id() or ""
+    if "config_firefly_client_secret" not in st.session_state:
+        st.session_state.config_firefly_client_secret = config.get_firefly_client_secret() or ""
     if "config_image_provider" not in st.session_state:
         st.session_state.config_image_provider = config.get_image_provider() or "gemini"
+    if "config_content_extra_prompt" not in st.session_state:
+        st.session_state.config_content_extra_prompt = config.get_content_extra_prompt() or ""
+    if "config_content_system_override" not in st.session_state:
+        override_content = config.get_content_system_prompt_override()
+        st.session_state.config_content_system_override = override_content if override_content else ""
+    if "config_cloudinary_url" not in st.session_state:
+        st.session_state.config_cloudinary_url = config.get_cloudinary_url() or ""
 
 
 def _extract_sheet_id(value: str) -> str:
@@ -68,7 +83,12 @@ def _apply_config_from_session():
     config.set_runtime_override("GEMINI_API_KEY", st.session_state.get("config_gemini_api_key", ""))
     config.set_runtime_override("OPENAI_API_KEY", st.session_state.get("config_openai_api_key", ""))
     config.set_runtime_override("POLLINATIONS_API_KEY", st.session_state.get("config_pollinations_api_key", ""))
+    config.set_runtime_override("HUGGINGFACE_TOKEN", st.session_state.get("config_huggingface_token", ""))
+    config.set_runtime_override("FIREFLY_CLIENT_ID", st.session_state.get("config_firefly_client_id", ""))
+    config.set_runtime_override("FIREFLY_CLIENT_SECRET", st.session_state.get("config_firefly_client_secret", ""))
     config.set_runtime_override("IMAGE_PROVIDER", st.session_state.get("config_image_provider", "gemini"))
+    config.set_runtime_override("CONTENT_GENERATION_EXTRA_PROMPT", st.session_state.get("config_content_extra_prompt", ""))
+    config.set_runtime_override("CLOUDINARY_URL", st.session_state.get("config_cloudinary_url", ""))
 
 
 st.set_page_config(page_title="Configuração | Instagram Auto Post", page_icon="⚙️", layout="wide")
@@ -133,7 +153,7 @@ with st.container():
                 st.error(f"Imagens\n\n{_prov_label}\nAPI key em falta")
     with c4:
         _cn = config.CLOUDINARY_CLOUD_NAME
-        _cu = config.CLOUDINARY_URL
+        _cu = config.get_cloudinary_url()
         if (_cu and _cu.strip().startswith("cloudinary://")) or _cn:
             st.success(f"Cloudinary\n\n`{_cn or 'via URL'}`")
         else:
@@ -263,25 +283,60 @@ with col_ig2:
         label_visibility="collapsed",
     )
 
-if st.button("Verificar e aceitar — Instagram", key="verify_ig"):
-    _apply_config_from_session()
-    ig_id = st.session_state.get("config_ig_business_id", "")
-    ig_token = st.session_state.get("config_ig_access_token", "")
-    if ig_id:
-        update_env_vars({"IG_BUSINESS_ID": ig_id})
-    if ig_token:
-        update_env_vars({"IG_ACCESS_TOKEN": ig_token})
-    ok, msg = verify_instagram()
-    if ok:
-        st.success(msg)
-    else:
-        st.error(msg)
+col_verify_ig, col_monitor_ig = st.columns(2)
+with col_verify_ig:
+    if st.button("Verificar e aceitar — Instagram", key="verify_ig"):
+        _apply_config_from_session()
+        ig_id = st.session_state.get("config_ig_business_id", "")
+        ig_token = st.session_state.get("config_ig_access_token", "")
+        if ig_id:
+            update_env_vars({"IG_BUSINESS_ID": ig_id})
+        if ig_token:
+            update_env_vars({"IG_ACCESS_TOKEN": ig_token})
+        ok, msg = verify_instagram()
+        if ok:
+            st.success(msg)
+        else:
+            st.error(msg)
+with col_monitor_ig:
+    if st.button("Verificar estado da API / rate limits", key="check_ig_api", help="Faz um request de teste e mostra código de erro, headers X-App-Usage, etc. para ver se a API está bloqueada ou no limite."):
+        _apply_config_from_session()
+        st.session_state["ig_api_status_result"] = check_instagram_api_status()
+        st.rerun()
+    st.caption("Códigos 4, 17, 32, 613 = rate limit. Headers X-App-Usage com 100% = no limite.")
+
+if st.session_state.get("ig_api_status_result") is not None:
+    res = st.session_state["ig_api_status_result"]
+    with st.expander("Resultado: estado da API Instagram", expanded=True):
+        if res.get("ok"):
+            st.success("A API respondeu normalmente. Podes ver os headers de uso em baixo.")
+        else:
+            st.warning("A API devolveu erro ou está em rate limit. Ver detalhes em baixo.")
+        for line in res.get("summary") or []:
+            st.write(line)
+        st.markdown("**Código HTTP:** " + (str(res.get("status_code")) if res.get("status_code") is not None else "—"))
+        if res.get("error_code") is not None:
+            st.markdown("**Código de erro da API:** " + str(res["error_code"]))
+        if res.get("error_message"):
+            st.markdown("**Mensagem:** " + str(res["error_message"]))
+        if res.get("usage_headers"):
+            st.markdown("**Headers de uso (Meta):**")
+            st.code("\n".join(f"{k}: {v}" for k, v in res["usage_headers"].items()), language=None)
+        if res.get("body") is not None:
+            st.markdown("**Resposta (corpo):**")
+            if isinstance(res["body"], dict):
+                st.json(res["body"])
+            else:
+                st.code(str(res["body"]), language=None)
+    if st.button("Ocultar resultado da API", key="clear_ig_api_result"):
+        st.session_state["ig_api_status_result"] = None
+        st.rerun()
 
 st.divider()
 
 # ========== 3. GERAÇÃO DE IMAGENS ==========
 st.subheader("3. Geração de imagens")
-st.caption("Escolhe o provedor para gerar imagens a partir do prompt. Pollinations é grátis e não precisa de API key.")
+st.caption("Escolhe o provedor para gerar imagens a partir do prompt. Provedores com tier gratuito (uso/créditos limitados): Pollinations, Gemini, Hugging Face.")
 
 _provider_keys = list(AVAILABLE_PROVIDERS.keys())
 _provider_labels = list(AVAILABLE_PROVIDERS.values())
@@ -325,8 +380,40 @@ elif selected_provider == "pollinations":
         placeholder="sk_...",
     )
     st.caption("Usa modelo FLUX via gen.pollinations.ai. Com API key: sem rate-limit. Sem key: funciona com limites.")
+elif selected_provider == "huggingface":
+    st.link_button("Obter token em Hugging Face", "https://huggingface.co/settings/tokens", use_container_width=True)
+    st.text_input(
+        "Hugging Face Access Token",
+        value=st.session_state.config_huggingface_token,
+        key="config_huggingface_token",
+        type="password",
+        placeholder="hf_...",
+    )
+    st.caption("Inference API com FLUX.1-schnell (free tier com créditos limitados; ao esgotar, surge 402 — compra créditos ou PRO em huggingface.co). Token em huggingface.co/settings/tokens.")
+elif selected_provider == "firefly":
+    st.link_button("Obter credenciais no Adobe Developer Console", "https://developer.adobe.com/console", use_container_width=True)
+    st.text_input(
+        "Firefly Client ID",
+        value=st.session_state.config_firefly_client_id,
+        key="config_firefly_client_id",
+        type="password",
+        placeholder="Client ID",
+    )
+    st.text_input(
+        "Firefly Client Secret",
+        value=st.session_state.config_firefly_client_secret,
+        key="config_firefly_client_secret",
+        type="password",
+        placeholder="Client Secret",
+    )
+    st.caption("Adobe Firefly API. Cria um projeto no Adobe Developer Console e adiciona o produto Firefly Services para obter Client ID e Secret.")
 
-if st.button("Verificar — Geração de imagens", key="verify_image_provider"):
+# Persistir o provedor escolhido no .env assim que mudar (para Publicar usar o correto mesmo após F5)
+_current_env_provider = (os.getenv("IMAGE_PROVIDER") or "gemini").strip()
+if selected_provider != _current_env_provider:
+    update_env_vars({"IMAGE_PROVIDER": selected_provider})
+
+if st.button("Verificar e gravar a configuração escolhida", key="verify_image_provider"):
     _apply_config_from_session()
     env_updates = {"IMAGE_PROVIDER": selected_provider}
     if selected_provider == "gemini":
@@ -341,6 +428,17 @@ if st.button("Verificar — Geração de imagens", key="verify_image_provider"):
         poll_key = st.session_state.get("config_pollinations_api_key", "")
         if poll_key:
             env_updates["POLLINATIONS_API_KEY"] = poll_key
+    elif selected_provider == "huggingface":
+        hf_token = st.session_state.get("config_huggingface_token", "")
+        if hf_token:
+            env_updates["HUGGINGFACE_TOKEN"] = hf_token
+    elif selected_provider == "firefly":
+        firefly_id = st.session_state.get("config_firefly_client_id", "")
+        firefly_secret = st.session_state.get("config_firefly_client_secret", "")
+        if firefly_id:
+            env_updates["FIREFLY_CLIENT_ID"] = firefly_id
+        if firefly_secret:
+            env_updates["FIREFLY_CLIENT_SECRET"] = firefly_secret
     update_env_vars(env_updates)
     ok, msg = verify_image_provider()
     if ok:
@@ -348,13 +446,79 @@ if st.button("Verificar — Geração de imagens", key="verify_image_provider"):
     else:
         st.error(msg)
 
+# Botão para gerar imagem de teste (comprovar que o provedor está a funcionar)
+if "config_image_provider_last" not in st.session_state:
+    st.session_state.config_image_provider_last = selected_provider
+provider_changed = st.session_state.config_image_provider_last != selected_provider
+if provider_changed:
+    st.session_state.config_image_provider_last = selected_provider
+    st.info("Provedor de imagens alterado. Gera uma imagem de teste para comprovar que está a funcionar.")
+
+if st.button("Gerar imagem de teste", key="generate_test_image"):
+    _apply_config_from_session()
+    env_updates = {"IMAGE_PROVIDER": selected_provider}
+    if selected_provider == "gemini":
+        if st.session_state.get("config_gemini_api_key"):
+            env_updates["GEMINI_API_KEY"] = st.session_state.config_gemini_api_key
+    elif selected_provider == "openai":
+        if st.session_state.get("config_openai_api_key"):
+            env_updates["OPENAI_API_KEY"] = st.session_state.config_openai_api_key
+    elif selected_provider == "pollinations":
+        if st.session_state.get("config_pollinations_api_key"):
+            env_updates["POLLINATIONS_API_KEY"] = st.session_state.config_pollinations_api_key
+    elif selected_provider == "huggingface":
+        if st.session_state.get("config_huggingface_token"):
+            env_updates["HUGGINGFACE_TOKEN"] = st.session_state.config_huggingface_token
+    elif selected_provider == "firefly":
+        if st.session_state.get("config_firefly_client_id"):
+            env_updates["FIREFLY_CLIENT_ID"] = st.session_state.config_firefly_client_id
+        if st.session_state.get("config_firefly_client_secret"):
+            env_updates["FIREFLY_CLIENT_SECRET"] = st.session_state.config_firefly_client_secret
+    update_env_vars(env_updates)
+    config.set_runtime_override("IMAGE_PROVIDER", selected_provider)
+    try:
+        from instagram_poster import image_generator
+        with st.spinner("A gerar imagem de teste..."):
+            test_prompt = "A serene landscape with a small house and trees, soft morning light, no text."
+            image_bytes = image_generator.generate_image_from_prompt(test_prompt)
+        if image_bytes:
+            st.success("Imagem de teste gerada com sucesso.")
+            st.image(image_bytes, caption="Imagem de teste", use_container_width=True)
+        else:
+            st.error("O provedor não devolveu dados.")
+    except Exception as e:
+        st.error(f"Erro ao gerar imagem de teste: {e}")
+
 st.divider()
 
 # ========== 4. CLOUDINARY ==========
 st.subheader("4. Cloudinary")
-st.caption("Upload de imagens geradas. Configura no .env (CLOUDINARY_URL) ou no dashboard.")
+st.caption("Upload de imagens geradas. Configura no .env (CLOUDINARY_URL) ou introduz directamente abaixo.")
 st.link_button("☁️ Dashboard Cloudinary", CLOUDINARY_DASHBOARD, use_container_width=True)
+
+def _normalize_cloudinary_url(value: str) -> str:
+    """Aceita CLOUDINARY_URL=cloudinary://... ou só cloudinary://..."""
+    if not value or not value.strip():
+        return ""
+    v = value.strip()
+    if "=" in v and v.startswith("CLOUDINARY_URL"):
+        v = v.split("=", 1)[1].strip().strip('"').strip("'")
+    return v
+
+st.text_input(
+    "CLOUDINARY_URL (introdução directa)",
+    value=st.session_state.config_cloudinary_url,
+    key="config_cloudinary_url",
+    type="password",
+    placeholder="CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME",
+    help="Cola a variável de ambiente completa (ex.: CLOUDINARY_URL=cloudinary://233159192196183:xxx@dvnpqhz9h) ou só o valor cloudinary://...",
+)
 if st.button("Verificar — Cloudinary", key="verify_cloudinary"):
+    _apply_config_from_session()
+    url_val = _normalize_cloudinary_url(st.session_state.get("config_cloudinary_url", ""))
+    if url_val:
+        config.set_runtime_override("CLOUDINARY_URL", url_val)
+        update_env_vars({"CLOUDINARY_URL": url_val})
     ok, msg = verify_cloudinary()
     if ok:
         st.success(msg)
@@ -363,8 +527,55 @@ if st.button("Verificar — Cloudinary", key="verify_cloudinary"):
 
 st.divider()
 
-# ========== 5. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
-st.subheader("5. Preencher Gemini_Prompt no Sheet")
+# ========== 5. GERAÇÃO DE CONTEÚDO ==========
+st.subheader("5. Geração de conteúdo")
+st.caption("Personaliza o prompt usado na página Conteúdo para variar temas ao longo do tempo ou consoante o que está em moda.")
+content_extra = st.text_area(
+    "Instruções adicionais / Foco actual",
+    value=st.session_state.config_content_extra_prompt,
+    key="config_content_extra_prompt",
+    height=100,
+    placeholder="Ex.: Este mês priorizar limites e dizer não; evitar clichés de produtividade. Temas em moda: descanso, slow living.",
+    help="Temas em moda ou foco desta época. Será enviado à IA em cada geração para variar o conteúdo.",
+)
+with st.expander("Prompt de sistema padrão (referência)", expanded=False):
+    st.caption("Prompt base usado na geração de conteúdo. Apenas informativo; serve de referência para o personalizado abaixo.")
+    st.text_area(
+        "Prompt padrão",
+        value=config.get_default_content_system_prompt(),
+        height=320,
+        disabled=True,
+        label_visibility="collapsed",
+        key="content_default_prompt_display",
+    )
+with st.expander("Prompt de sistema personalizado (avançado)"):
+    st.caption("Substitui por completo o prompt de sistema da geração de conteúdo. Deixar vazio para usar o padrão.")
+    content_system_override = st.text_area(
+        "Prompt de sistema",
+        value=st.session_state.config_content_system_override,
+        key="config_content_system_override",
+        height=200,
+        label_visibility="collapsed",
+        placeholder="Colar aqui o prompt completo se quiser substituir o padrão...",
+    )
+if st.button("Guardar — Geração de conteúdo", key="save_content_generation"):
+    _apply_config_from_session()
+    extra_val = (st.session_state.get("config_content_extra_prompt") or "").strip()
+    update_env_vars({"CONTENT_GENERATION_EXTRA_PROMPT": extra_val})
+    config.set_runtime_override("CONTENT_GENERATION_EXTRA_PROMPT", extra_val)
+    override_val = (st.session_state.get("config_content_system_override") or "").strip()
+    override_path = config.get_content_system_prompt_override_path()
+    if override_val:
+        override_path.parent.mkdir(parents=True, exist_ok=True)
+        override_path.write_text(override_val, encoding="utf-8")
+    elif override_path.exists():
+        override_path.write_text("", encoding="utf-8")
+    st.success("Configuração de geração de conteúdo guardada.")
+
+st.divider()
+
+# ========== 6. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
+st.subheader("6. Preencher Gemini_Prompt no Sheet")
 st.caption(
     "Gera descrições visuais (sem texto) a partir da Image Text de cada linha, "
     "usando IA para converter a quote numa cena. A quote é sobreposta na imagem ao publicar."
@@ -398,8 +609,8 @@ if st.button("Preencher Gemini_Prompt no Sheet"):
 
 st.divider()
 
-# ========== 6. AUTOPUBLISH ==========
-st.subheader("6. Publicacao automatica")
+# ========== 7. AUTOPUBLISH ==========
+st.subheader("7. Publicacao automatica")
 st.caption("Publica posts automaticamente na hora agendada no Sheet. Funciona com a app aberta ou via Task Scheduler.")
 
 from instagram_poster import autopublish
@@ -407,6 +618,10 @@ from instagram_poster.config import (
     get_autopublish_enabled,
     get_autopublish_interval,
     get_autopublish_reel_every_5,
+    get_autopublish_reel_reuse_interval_minutes,
+    get_autopublish_reel_reuse_schedule_enabled,
+    get_autopublish_story_reuse_interval_minutes,
+    get_autopublish_story_reuse_schedule_enabled,
     get_autopublish_story_with_post,
 )
 
@@ -414,7 +629,11 @@ _ap_running = autopublish.is_running()
 _ap_enabled = get_autopublish_enabled()
 _ap_interval = get_autopublish_interval()
 _ap_story = get_autopublish_story_with_post()
+_ap_story_reuse = get_autopublish_story_reuse_schedule_enabled()
+_ap_story_reuse_interval = get_autopublish_story_reuse_interval_minutes()
 _ap_reel = get_autopublish_reel_every_5()
+_ap_reel_reuse = get_autopublish_reel_reuse_schedule_enabled()
+_ap_reel_reuse_interval = get_autopublish_reel_reuse_interval_minutes()
 
 # Toggle on/off
 ap_enabled = st.toggle(
@@ -434,25 +653,76 @@ ap_story = st.toggle(
     key="config_autopublish_story",
     help="Quando um post e publicado (feed), publica tambem uma Story com a mesma imagem em formato vertical.",
 )
+col_story_reuse_toggle, col_story_reuse_time, col_story_reuse_unit = st.columns([2, 1, 0.5])
+with col_story_reuse_toggle:
+    ap_story_reuse = st.toggle(
+        "Criar Stories com posts já usados a cada",
+        value=_ap_story_reuse,
+        key="config_autopublish_story_reuse",
+        help="Publica uma Story com a imagem do ultimo post publicado no intervalo definido ao lado.",
+    )
+with col_story_reuse_time:
+    ap_story_reuse_interval_hours = st.number_input(
+        "horas",
+        min_value=0.5,
+        max_value=168.0,
+        value=round(_ap_story_reuse_interval / 60, 1),
+        step=0.5,
+        key="config_autopublish_story_reuse_interval",
+        label_visibility="collapsed",
+    )
+with col_story_reuse_unit:
+    st.caption("h")
 ap_reel = st.toggle(
-    "Publicar Reel automaticamente a cada 5 posts",
+    "Publicar Reel automaticamente a cada 5 posts nunca usados em Reels",
     value=_ap_reel,
     key="config_autopublish_reel",
-    help="Quando ha 5 ou mais posts publicados, gera e publica um Reel com os ultimos 5 (8s/slide, fade, audio da pasta MUSIC).",
+    help="Critério: 5 posts já publicados no Sheet (com ImageURL) que ainda não tenham sido usados em nenhum Reel (registo em assets/reels_used_rows.json). Gera e publica um Reel (8s/slide, fade, áudio da pasta MUSIC). Não significa «5 posts novos desde o último Reel».",
 )
+col_reuse_toggle, col_reuse_time, col_reuse_unit = st.columns([2, 1, 0.5])
+with col_reuse_toggle:
+    ap_reel_reuse = st.toggle(
+        "Criar Reels com posts já usados a cada",
+        value=_ap_reel_reuse,
+        key="config_autopublish_reel_reuse",
+        help="Gera e publica um Reel com os ultimos 5 posts (podem ser ja usados em Reels) no intervalo definido ao lado.",
+    )
+with col_reuse_time:
+    ap_reel_reuse_interval_hours = st.number_input(
+        "horas",
+        min_value=0.5,
+        max_value=168.0,
+        value=round(_ap_reel_reuse_interval / 60, 1),
+        step=0.5,
+        key="config_autopublish_reel_reuse_interval",
+        label_visibility="collapsed",
+    )
+with col_reuse_unit:
+    st.caption("h")
 
 # Guardar alteracoes no .env
-if ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_reel != _ap_reel:
+ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
+ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
+if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
+        or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
         "AUTOPUBLISH_STORY_WITH_POST": "true" if ap_story else "false",
+        "AUTOPUBLISH_STORY_REUSE_SCHEDULE": "true" if ap_story_reuse else "false",
+        "AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES": str(ap_story_reuse_interval),
         "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
+        "AUTOPUBLISH_REEL_REUSE_SCHEDULE": "true" if ap_reel_reuse else "false",
+        "AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES": str(ap_reel_reuse_interval),
     })
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
     config.set_runtime_override("AUTOPUBLISH_STORY_WITH_POST", "true" if ap_story else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "true" if ap_story_reuse else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", str(ap_story_reuse_interval))
     config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "true" if ap_reel_reuse else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", str(ap_reel_reuse_interval))
 
 # Botoes iniciar/parar
 col_ap1, col_ap2, _ = st.columns([1, 1, 2])

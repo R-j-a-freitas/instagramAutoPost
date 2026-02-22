@@ -1,6 +1,6 @@
 """
 Geração de imagens a partir de prompt (multi-provedor) e upload para Cloudinary.
-O provedor activo é definido por IMAGE_PROVIDER no .env (gemini, openai, pollinations).
+O provedor activo é definido por IMAGE_PROVIDER no .env (gemini, openai, pollinations, firefly).
 Após gerar a imagem, sobrepõe o texto da quote (Image Text) automaticamente.
 
 Para evitar que o modelo de imagem (FLUX) renderize texto na imagem, o texto da
@@ -19,7 +19,7 @@ from instagram_poster.config import (
     CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME,
-    CLOUDINARY_URL,
+    get_cloudinary_url,
     get_image_provider,
     get_pollinations_api_key,
 )
@@ -229,8 +229,9 @@ def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_p
     except ImportError:
         raise ImportError("Instala o pacote cloudinary: pip install cloudinary") from None
 
-    if CLOUDINARY_URL and CLOUDINARY_URL.strip().startswith("cloudinary://"):
-        cloudinary.config(cloudinary_url=CLOUDINARY_URL)
+    cloudinary_url = get_cloudinary_url()
+    if cloudinary_url and cloudinary_url.strip().startswith("cloudinary://"):
+        cloudinary.config(cloudinary_url=cloudinary_url)
     elif CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
         cloudinary.config(
             cloud_name=CLOUDINARY_CLOUD_NAME,
@@ -271,6 +272,7 @@ def _image_to_story_frame(image_bytes: bytes) -> bytes:
     """
     Converte uma imagem quadrada (ex.: 1080x1080) num frame vertical 1080x1920
     para Instagram Story: fundo desfocado da própria imagem e imagem centrada.
+    A API do Instagram só aceita JPEG para imagens; PNG causa 400 Bad Request.
     """
     from PIL import Image, ImageFilter
 
@@ -289,7 +291,7 @@ def _image_to_story_frame(image_bytes: bytes) -> bytes:
     y = (sh - square.height) // 2
     bg.paste(square, (x, y))
     buf = io.BytesIO()
-    bg.save(buf, format="PNG", quality=95)
+    bg.save(buf, format="JPEG", quality=95)
     return buf.getvalue()
 
 

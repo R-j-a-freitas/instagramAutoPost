@@ -10,9 +10,10 @@ from instagram_poster.config import get_pollinations_api_key
 from instagram_poster.reel_generator import (
     create_reel_video,
     get_available_music_tracks,
+    get_posts_for_reel,
+    mark_posts_used_in_reel,
     upload_video_to_cloudinary,
 )
-from instagram_poster.sheets_client import get_last_published_posts
 from instagram_poster import ig_client
 
 st.set_page_config(page_title="Reels | Instagram Auto Post", page_icon="🎬", layout="wide")
@@ -43,10 +44,16 @@ st.caption("Gera um vídeo slideshow (9:16) a partir dos últimos posts publicad
 
 # --- Secção 1: Seleção de posts ---
 st.subheader("1. Posts para o Reel")
+allow_reuse = st.checkbox(
+    "Incluir posts já usados em Reels anteriores",
+    value=False,
+    key="reel_allow_reuse",
+    help="Por defeito só são mostrados posts que ainda não foram usados em nenhum Reel.",
+)
 n_posts = st.slider("Número de posts a incluir", min_value=1, max_value=10, value=5, key="reel_n_posts")
 
 try:
-    all_posts = get_last_published_posts(n=10)
+    all_posts = get_posts_for_reel(n=10, allow_reuse=allow_reuse)
 except Exception as e:
     st.error(f"Erro ao ler o Sheet: {e}")
     all_posts = []
@@ -55,6 +62,8 @@ posts_to_use = []
 if not all_posts:
     st.warning("Nenhum post publicado com imagem no Sheet. Publica posts primeiro ou preenche ImageURL nas linhas publicadas (página Stories).")
 else:
+    if not allow_reuse and len(all_posts) < 10:
+        st.info(f"Há {len(all_posts)} post(s) publicados ainda não usados em Reels. Reduz o número de slides ou activa «Incluir posts já usados em Reels anteriores».")
     posts_display = all_posts[: min(n_posts, len(all_posts))]
     selected = []
     cols = st.columns(min(5, len(posts_display)))
@@ -163,6 +172,7 @@ if st.button("Gerar Reel", type="primary", key="reel_generate"):
                     audio_volume=audio_volume,
                 )
                 st.session_state.reel_video_bytes = video_bytes
+                st.session_state.reel_posts_for_video = [p.get("row_index") for p in posts_to_use if p.get("row_index") is not None]
                 st.success("Reel gerado. Visualiza em baixo e publica no Instagram quando quiseres.")
                 st.rerun()
             except Exception as e:
@@ -177,8 +187,10 @@ if st.session_state.reel_video_bytes:
                 video_url = upload_video_to_cloudinary(st.session_state.reel_video_bytes)
                 creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
                 media_id = ig_client.publish_media(creation_id, max_wait=180)
+                mark_posts_used_in_reel(st.session_state.get("reel_posts_for_video", []))
                 st.success(f"Reel publicado. Media ID: {media_id}")
                 st.session_state.reel_video_bytes = None
+                st.session_state.reel_posts_for_video = []
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao publicar: {e}")

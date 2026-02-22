@@ -15,3 +15,5 @@ __pycache__/
 .streamlit/
 .cursor/
 instagramAutoPost/
+.autoclick_last_click.txt
+.autoclick_positions.json

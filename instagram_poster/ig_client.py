@@ -59,24 +59,41 @@ def create_media(image_url: str, caption: str) -> str:
 def create_story(image_url: str) -> str:
     """
     Cria um content container para uma Story (imagem 9:16, ex.: 1080x1920).
-    POST /{ig-user-id}/media com media_type=STORIES e image_url.
-    Devolve o creation_id para usar em publish_media.
+    A API do Instagram só aceita JPEG; a imagem deve estar em URL público.
+    POST com JSON body e Bearer token (evita problemas de encoding do image_url na query).
     """
     _check_config()
     ig_id = get_ig_business_id()
     url = _url(f"/{ig_id}/media")
-    params = {
+    token = get_ig_access_token()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    payload = {
         "media_type": "STORIES",
         "image_url": image_url,
-        "access_token": get_ig_access_token(),
     }
     logger.info("A criar Story container para image_url=%s", image_url[:80] + "..." if len(image_url) > 80 else image_url)
-    resp = requests.post(url, params=params, timeout=30)
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
     try:
         resp.raise_for_status()
-    except requests.HTTPError:
-        logger.error("create_story falhou: status=%s body=%s", resp.status_code, resp.text)
-        raise
+    except requests.HTTPError as e:
+        body = (resp.text or "")[:500]
+        logger.error("create_story falhou: status=%s body=%s", resp.status_code, body)
+        try:
+            err = resp.json().get("error", {})
+            msg = (err.get("message") or "").lower()
+            if "too many actions" in msg or err.get("code") == 9:
+                raise ValueError(
+                    "Limite de acções da API do Instagram excedido. "
+                    "Publicaste demasiado em pouco tempo. Espera algumas horas antes de publicar Stories ou outros conteúdos."
+                ) from e
+            user_msg = err.get("error_user_msg") or err.get("message") or body
+            raise ValueError(f"Instagram Story: {user_msg}") from e
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError(
+                f"Instagram Story falhou (400). A imagem deve ser JPEG e estar num URL público. Resposta: {body}"
+            ) from e
     data = resp.json()
     creation_id = data.get("id")
     if not creation_id:
@@ -115,7 +132,7 @@ def create_reel(video_url: str, caption: str) -> str:
     return creation_id
 
 
-def _wait_for_container(creation_id: str, max_wait: int = 60, interval: int = 3) -> str:
+def _wait_for_container(creation_id: str, max_wait: int = 120, interval: int = 3) -> str:
     """
     Polling do status do container até FINISHED.
     O Instagram processa o container de forma assíncrona — chamar
@@ -141,16 +158,23 @@ def _wait_for_container(creation_id: str, max_wait: int = 60, interval: int = 3)
             raise ValueError(f"Container falhou: {data}")
         time.sleep(interval)
         elapsed += interval
+    logger.warning(
+        "Container %s não ficou pronto em %ds (último status: %s)",
+        creation_id,
+        max_wait,
+        status,
+    )
     raise TimeoutError(
-        f"Container {creation_id} não ficou pronto em {max_wait}s (último status: {status})"
+        f"Container {creation_id} não ficou pronto em {max_wait}s (último status: {status}). "
+        "Para Reels pode ser necessário aumentar max_wait (ex.: 240s)."
     )
 
 
-def publish_media(creation_id: str, max_wait: int = 60) -> str:
+def publish_media(creation_id: str, max_wait: int = 120) -> str:
     """
     Publica o container criado por create_media ou create_reel.
     Espera até o container estar FINISHED antes de chamar media_publish.
-    Para Reels/vídeo use max_wait=180 (processamento mais lento).
+    Default 120s para feed/Story; para Reels use max_wait=240 (processamento mais lento).
     """
     _check_config()
     ig_id = get_ig_business_id()
@@ -166,8 +190,32 @@ def publish_media(creation_id: str, max_wait: int = 60) -> str:
     resp = requests.post(url, params=params, timeout=30)
     try:
         resp.raise_for_status()
-    except requests.HTTPError:
-        logger.error("publish_media falhou: status=%s body=%s", resp.status_code, resp.text)
+    except requests.HTTPError as e:
+        body_preview = (resp.text or "")[:500]
+        logger.error("publish_media falhou: status=%s body=%s", resp.status_code, body_preview)
+        if resp.status_code == 400:
+            try:
+                err_data = resp.json()
+                err = err_data.get("error", {}) or {}
+                code = err.get("code")
+                subcode = err.get("error_subcode")
+                msg = (err.get("message") or "").lower()
+                user_msg = err.get("error_user_msg") or err.get("error_user_title") or ""
+                if code == 9 or subcode == 2207042 or "too many actions" in msg or "limite" in msg or "máximo" in msg:
+                    raise ValueError(
+                        "Limite de publicações da API do Instagram excedido. "
+                        "Alcançaste o número máximo de publicações permitidas (por dia/hora). "
+                        "Espera algumas horas ou até amanhã antes de publicar novamente."
+                    ) from e
+            except ValueError:
+                raise
+            except Exception:
+                pass
+            raise ValueError(
+                f"Instagram API 400 Bad Request ao publicar contentor {creation_id}. "
+                f"Resposta: {body_preview}. "
+                "O contentor pode ainda não estar FINISHED (aumentar max_wait) ou ter expirado (criar novo)."
+            ) from e
         raise
     data = resp.json()
     media_id = data.get("id")

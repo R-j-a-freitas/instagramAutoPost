@@ -33,8 +33,8 @@ def _init_config_session():
         st.session_state.config_openai_api_key = config.get_openai_api_key() or ""
     if "config_pollinations_api_key" not in st.session_state:
         st.session_state.config_pollinations_api_key = config.get_pollinations_api_key() or ""
-    if "config_image_provider" not in st.session_state:
-        st.session_state.config_image_provider = config.get_image_provider() or "gemini"
+    # Sempre sincronizar o provedor a partir da config/.env para não usar valor antigo da session
+    st.session_state.config_image_provider = config.get_image_provider() or "gemini"
 
 
 def _apply_config_from_session():
