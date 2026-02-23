@@ -36,6 +36,7 @@ from instagram_poster.config import (
     get_autopublish_reel_reuse_schedule_enabled,
     get_autopublish_story_reuse_interval_minutes,
     get_autopublish_story_reuse_schedule_enabled,
+    get_autopublish_story_with_music,
     get_autopublish_story_with_post,
 )
 from instagram_poster.env_utils import update_env_vars
@@ -44,6 +45,7 @@ _ap_running = autopublish.is_running()
 _ap_enabled = get_autopublish_enabled()
 _ap_interval = get_autopublish_interval()
 _ap_story = get_autopublish_story_with_post()
+_ap_story_music = get_autopublish_story_with_music()
 _ap_story_reuse = get_autopublish_story_reuse_schedule_enabled()
 _ap_story_reuse_interval = get_autopublish_story_reuse_interval_minutes()
 _ap_reel = get_autopublish_reel_every_5()
@@ -69,6 +71,17 @@ ap_story = st.toggle(
     value=_ap_story,
     key="ap_menu_story",
     help="Quando um post e publicado (feed), publica tambem uma Story com a mesma imagem em formato vertical.",
+)
+ap_story_music = st.toggle(
+    "Adicionar musica nas Stories (video com audio da pasta MUSIC)",
+    value=_ap_story_music,
+    key="ap_menu_story_music",
+    help="Gera um video (ate 60s, maximo da API) com a imagem + musica e publica como Story. Requer moviepy.",
+)
+st.caption(
+    "**Duas fontes de Stories:** (1) Story com cada post — 1 Story por cada post publicado; "
+    "(2) Story reuse — 1 Story a cada X horas com imagem de um post aleatorio. "
+    "Se ambas estiverem activas, o total de Stories e a soma das duas."
 )
 col_story_reuse_toggle, col_story_reuse_time, col_story_reuse_unit = st.columns([2, 1, 0.5])
 with col_story_reuse_toggle:
@@ -120,12 +133,13 @@ with col_reuse_unit:
 # Guardar alteracoes no .env
 ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
 ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
-if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
+if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_music != _ap_story_music or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
         or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
         "AUTOPUBLISH_STORY_WITH_POST": "true" if ap_story else "false",
+        "AUTOPUBLISH_STORY_WITH_MUSIC": "true" if ap_story_music else "false",
         "AUTOPUBLISH_STORY_REUSE_SCHEDULE": "true" if ap_story_reuse else "false",
         "AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES": str(ap_story_reuse_interval),
         "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
@@ -135,6 +149,7 @@ if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
     config.set_runtime_override("AUTOPUBLISH_STORY_WITH_POST", "true" if ap_story else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_WITH_MUSIC", "true" if ap_story_music else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "true" if ap_story_reuse else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", str(ap_story_reuse_interval))
     config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
@@ -184,16 +199,18 @@ else:
 stats = autopublish.get_stats()
 last_check = autopublish.get_last_check()
 
-col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
+col_s1, col_s2, col_s3, col_s4, col_s5, col_s6 = st.columns(6)
 with col_s1:
     st.metric("Posts publicados", stats["total_published"])
 with col_s2:
-    st.metric("Reels auto", stats.get("total_reels", 0), help="Numero de Reels publicados automaticamente. Activa/desactiva no interruptor «Publicar Reel automaticamente a cada 5 posts» acima.")
+    st.metric("Stories", stats.get("total_stories", 0), help="Stories publicadas automaticamente ou manualmente.")
 with col_s3:
-    st.metric("Erros", stats["total_errors"])
+    st.metric("Reels auto", stats.get("total_reels", 0), help="Numero de Reels publicados automaticamente. Activa/desactiva no interruptor «Publicar Reel automaticamente a cada 5 posts» acima.")
 with col_s4:
-    st.metric("Verificacoes", stats["total_checks"])
+    st.metric("Erros", stats["total_errors"])
 with col_s5:
+    st.metric("Verificacoes", stats["total_checks"])
+with col_s6:
     if last_check:
         st.metric("Ultima verificacao", last_check.strftime("%H:%M:%S"))
     elif stats.get("started_at"):
@@ -208,17 +225,24 @@ ap_log = autopublish.get_log()
 if ap_log:
     published_entries = [e for e in ap_log if e.get("type") == "publish"]
     reel_entries = [e for e in ap_log if e.get("type") == "reel"]
+    story_entries = [e for e in ap_log if e.get("type") == "story"]
     error_entries = [e for e in ap_log if e.get("type") == "error"]
     check_entries = [e for e in ap_log if e.get("type") == "check"]
-    other_entries = [e for e in ap_log if e.get("type") not in ("publish", "error", "check", "reel")]
+    other_entries = [e for e in ap_log if e.get("type") not in ("publish", "error", "check", "reel", "story")]
 
     if check_entries:
         with st.expander(f"Verificações ({len(check_entries)})", expanded=True):
-            st.caption("Cada verificação corresponde a um ciclo do intervalo definido. Mostradas as mais recentes.")
-            for entry in reversed(check_entries[:30]):
-                ts = entry["timestamp"].strftime("%H:%M:%S")
-                msg = entry.get("message", "")
-                st.text(f"[{ts}] {msg}")
+            st.caption("Cada verificação corresponde a um ciclo do intervalo definido. Mais recentes em primeiro.")
+            col_cap, col_btn = st.columns([3, 1])
+            with col_btn:
+                if st.button("Limpar verificações", key="ap_clear_checks"):
+                    autopublish.clear_check_entries()
+                    st.rerun()
+            with st.container(height=320):
+                for entry in reversed(check_entries):
+                    ts = entry["timestamp"].strftime("%H:%M:%S")
+                    msg = entry.get("message", "")
+                    st.text(f"[{ts}] {msg}")
 
     if reel_entries:
         with st.expander(f"Reels publicados automaticamente ({len(reel_entries)})", expanded=True):
@@ -258,11 +282,71 @@ if ap_log:
                     st.caption(" | ".join(detail_parts))
                 st.divider()
 
-    if error_entries:
-        with st.expander(f"Erros ({len(error_entries)})"):
+    _ORIGEM_LABELS = {"reuse": "Reuse", "com_post": "Com post", "aleatorio": "Aleatório", "manual": "Manual"}
+
+    if story_entries:
+        with st.expander(f"Stories postadas ({len(story_entries)})", expanded=True):
+            st.caption("Stories publicadas automaticamente com cada post ou manualmente na página Stories.")
+            for entry in reversed(story_entries):
+                ts = entry["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                quote = entry.get("quote", "")
+                post_date = entry.get("date", "")
+                post_time = entry.get("time", "")
+                row = entry.get("row", "")
+                mid = entry.get("media_id", "")
+                origem = _ORIGEM_LABELS.get(entry.get("story_source", ""), "—")
+                schedule_info = f"{post_date} {post_time}".strip()
+
+                col_p1, col_p2 = st.columns([3, 1])
+                with col_p1:
+                    st.markdown(f"**\"{quote}\"**" if quote else "*(sem quote)*")
+                with col_p2:
+                    st.caption(f"Story: {ts}")
+                detail_parts = [f"Origem: {origem}"]
+                if schedule_info:
+                    detail_parts.append(f"Post: {schedule_info}")
+                if row:
+                    detail_parts.append(f"Linha: {row}")
+                if mid:
+                    detail_parts.append(f"Media ID: `{mid}`")
+                if detail_parts:
+                    st.caption(" | ".join(detail_parts))
+                st.divider()
+
+    with st.expander(f"Erros ({len(error_entries)})"):
+        if st.button("Limpar erros", key="ap_clear_errors", disabled=not error_entries):
+            autopublish.clear_error_entries()
+            st.rerun()
+        if error_entries:
+            has_moviepy_error = any(
+                "moviepy" in (e.get("message") or "").lower() for e in error_entries
+            )
+            if has_moviepy_error:
+                if st.button("Instalar dependências agora", type="primary", key="ap_install_moviepy"):
+                    import subprocess
+                    import sys
+                    with st.spinner("A instalar (pode demorar alguns minutos)..."):
+                        try:
+                            result = subprocess.run(
+                                [sys.executable, "-m", "pip", "install", "moviepy", "imageio-ffmpeg"],
+                                capture_output=True,
+                                text=True,
+                                timeout=600,
+                            )
+                        except subprocess.TimeoutExpired:
+                            st.error("Instalação demorou demasiado. Tenta no terminal: pip install moviepy imageio-ffmpeg")
+                            result = None
+                    if result is not None:
+                        if result.returncode == 0:
+                            st.success("Instalado. Recarrega a página (F5 ou botão do browser).")
+                        else:
+                            st.error(f"Falha: {result.stderr or result.stdout or 'Erro desconhecido'}")
+                st.caption("Recarrega a página após instalar.")
             for entry in reversed(error_entries):
                 ts = entry["timestamp"].strftime("%H:%M:%S")
                 st.error(f"[{ts}] {entry['message']}")
+        else:
+            st.caption("Nenhum erro registado.")
 
     if other_entries:
         with st.expander(f"Eventos do sistema ({len(other_entries)})"):

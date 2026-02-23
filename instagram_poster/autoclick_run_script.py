@@ -56,12 +56,11 @@ def _run_click_loop(page, positions, interval_seconds: float, max_rounds: int) -
         if max_rounds > 0 and round_num >= max_rounds:
             break
         try:
-            page.reload(wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_load_state("networkidle", timeout=10000)
+            page.reload(wait_until="load", timeout=30000)
         except Exception as e:
             if _is_connection_error(e):
                 return
-            print(f"Reload/wait: {e}", file=sys.stderr)
+            print(f"Reload: {e}", file=sys.stderr)
         time.sleep(max(1, interval_seconds))
 
 

@@ -220,7 +220,12 @@ def create_reel_video(
     Se audio_path for fornecido, mistura o áudio (loop se necessário, fade out 2s).
     Devolve os bytes do ficheiro MP4.
     """
-    from moviepy import AudioFileClip, ImageClip, concatenate_audioclips, concatenate_videoclips, vfx, afx
+    try:
+        from moviepy import AudioFileClip, ImageClip, concatenate_audioclips, concatenate_videoclips, vfx, afx
+    except ImportError as e:
+        raise ImportError(
+            "moviepy não encontrado. Instala com: pip install moviepy imageio-ffmpeg"
+        ) from e
 
     if not posts:
         raise ValueError("Lista de posts vazia")
@@ -273,7 +278,7 @@ def create_reel_video(
         Path(tmp_path).unlink(missing_ok=True)
 
 
-def upload_video_to_cloudinary(video_bytes: bytes) -> str:
+def upload_video_to_cloudinary(video_bytes: bytes, public_id_prefix: str = "ig_reel") -> str:
     """Faz upload do vídeo para Cloudinary (resource_type=video) e devolve o secure_url."""
     try:
         import cloudinary
@@ -297,7 +302,7 @@ def upload_video_to_cloudinary(video_bytes: bytes) -> str:
         )
 
     import time
-    public_id = f"ig_reel_{int(time.time())}"
+    public_id = f"{public_id_prefix}_{int(time.time())}"
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         tmp.write(video_bytes)
         tmp_path = tmp.name

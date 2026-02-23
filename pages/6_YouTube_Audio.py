@@ -8,9 +8,17 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import imageio_ffmpeg
+try:
+    import imageio_ffmpeg
+except ImportError:
+    imageio_ffmpeg = None
+
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
+
 import streamlit as st
-import yt_dlp
 
 st.set_page_config(page_title="YouTube Áudio | Instagram Auto Post", page_icon="🎵", layout="wide")
 
@@ -41,6 +49,35 @@ with nav7:
 st.title("YouTube → Áudio MP3")
 st.caption("Descarrega apenas o stream de áudio (sem vídeo) e converte para MP3 (192 kbps) — mais rápido. Usa yt-dlp e FFmpeg (imageio-ffmpeg).")
 
+missing = []
+if imageio_ffmpeg is None:
+    missing.append("imageio-ffmpeg")
+if yt_dlp is None:
+    missing.append("yt-dlp")
+if missing:
+    st.error(
+        f"**{' e '.join(missing)}** não encontrado(s). Instala com: `pip install {' '.join(missing)}`"
+    )
+    if st.button("Instalar dependências agora", type="primary", key="yt_install_deps"):
+        import subprocess
+        import sys
+        with st.spinner("A instalar (pode demorar alguns minutos)..."):
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "imageio-ffmpeg", "yt-dlp"],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
+            except subprocess.TimeoutExpired:
+                st.error("Instalação demorou demasiado. Tenta no terminal: pip install imageio-ffmpeg yt-dlp")
+                result = None
+        if result is not None:
+            if result.returncode == 0:
+                st.success("Instalado. Recarrega a página (F5 ou botão do browser).")
+            else:
+                st.error(f"Falha: {result.stderr or result.stdout or 'Erro desconhecido'}")
+
 # Estado para o ficheiro descarregado
 if "yt_audio_path" not in st.session_state:
     st.session_state.yt_audio_path = None
@@ -65,9 +102,10 @@ def _get_ffmpeg_location() -> str | None:
         folder = root / subdir.replace("/", os.sep)
         if (folder / "ffmpeg").exists() or (folder / "ffmpeg.exe").exists():
             return str(folder)
-    exe = imageio_ffmpeg.get_ffmpeg_exe()
-    if exe and Path(exe).exists():
-        return str(Path(exe).resolve())
+    if imageio_ffmpeg is not None:
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).exists():
+            return str(Path(exe).resolve())
     return None
 
 
@@ -76,6 +114,8 @@ def download_youtube_audio(url: str) -> tuple[str | None, str | None, str | None
     Descarrega o áudio do YouTube em MP3.
     Devolve (caminho, nome_ficheiro, None) em sucesso ou (None, None, mensagem_erro) em falha.
     """
+    if yt_dlp is None:
+        return None, None, "yt-dlp não instalado. Executa: pip install yt-dlp"
     if not url or "youtube.com" not in url and "youtu.be" not in url:
         return None, None, "URL inválido. Usa um link do YouTube (youtube.com ou youtu.be)."
     ffmpeg_location = _get_ffmpeg_location()

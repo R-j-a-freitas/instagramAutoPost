@@ -20,3 +20,5 @@ instagramAutoPost/
 .autoclick_run_positions.json
 .autoclick_session_port.txt
 .autoclick_session_browser_data/
+.autopublish_log.json
+.autopublish_stopped

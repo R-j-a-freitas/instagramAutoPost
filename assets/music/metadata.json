@@ -1,9 +1,84 @@
 {
   "tracks": [
-    {"file": "calm_waves.mp3", "name": "Ondas calmas", "duration_s": 45},
-    {"file": "soft_piano.mp3", "name": "Piano suave", "duration_s": 38},
-    {"file": "morning_light.mp3", "name": "Luz da manha", "duration_s": 42},
-    {"file": "gentle_breeze.mp3", "name": "Brisa suave", "duration_s": 40},
-    {"file": "meditation.mp3", "name": "Meditacao", "duration_s": 50}
+    {
+      "file": "3 Most Beautiful _ Popular Hans Zimmer Pieces.mp3",
+      "name": "3 Most Beautiful _ Popular Hans Zimmer Pieces",
+      "duration_s": 0
+    },
+    {
+      "file": "Alex Warren - Ordinary (Official Video) [u2ah9tWTkmk].mp3",
+      "name": "Alex Warren - Ordinary",
+      "duration_s": 180
+    },
+    {
+      "file": "Benson Boone - Beautiful Things (Official Music Video) [Oa_RSwwpPaA].mp3",
+      "name": "Benson Boone - Beautiful Things",
+      "duration_s": 200
+    },
+    {
+      "file": "Hozier - Take Me To Church [PVjiKRfKpPI].mp3",
+      "name": "Hozier - Take Me To Church",
+      "duration_s": 240
+    },
+    {
+      "file": "Imagine Dragons - Believer (Music video remix) I Adobe Make The Cut [in9bfjrjwyg].mp3",
+      "name": "Imagine Dragons - Believer",
+      "duration_s": 220
+    },
+    {
+      "file": "Imagine Dragons - Thunder [fKopy74weus].mp3",
+      "name": "Imagine Dragons - Thunder",
+      "duration_s": 190
+    },
+    {
+      "file": "JVKE - GOLDEN HOUR __ Beautiful Piano Cover (Sheet Music).mp3",
+      "name": "JVKE - GOLDEN HOUR __ Beautiful Piano Cover (Sheet Music)",
+      "duration_s": 0
+    },
+    {
+      "file": "Ludivico Einaudi - Una Mattina.mp3",
+      "name": "Ludovico Einaudi - Una Mattina",
+      "duration_s": 360
+    },
+    {
+      "file": "Ludovico Einaudi - Experience.mp3",
+      "name": "Ludovico Einaudi - Experience",
+      "duration_s": 0
+    },
+    {
+      "file": "New Street Adventure - One & The Same (Acoustic).mp3",
+      "name": "New Street Adventure - One & The Same (Acoustic)",
+      "duration_s": 0
+    },
+    {
+      "file": "tatamusic-ambient-ambient-music-485385 (1).mp3",
+      "name": "Ambient Music 1",
+      "duration_s": 180
+    },
+    {
+      "file": "tatamusic-ambient-ambient-music-485385.mp3",
+      "name": "Ambient Music 2",
+      "duration_s": 180
+    },
+    {
+      "file": "tatamusic-restaurant-jazz-cafe-music-486651.mp3",
+      "name": "Jazz Cafe Music",
+      "duration_s": 200
+    },
+    {
+      "file": "Teddy Swims - The Door (Official Music Video) [VSXT4a2kRHA].mp3",
+      "name": "Teddy Swims - The Door",
+      "duration_s": 210
+    },
+    {
+      "file": "Tony Ann – ICARUS [Virtuosic Piano Solo].mp3",
+      "name": "Tony Ann – ICARUS [Virtuosic Piano Solo]",
+      "duration_s": 0
+    },
+    {
+      "file": "Torn (Australian Idol Performance).mp3",
+      "name": "Torn (Australian Idol Performance)",
+      "duration_s": 0
+    }
   ]
 }

@@ -110,7 +110,16 @@ CLOUDINARY_URL=cloudinary://...
 ENV=dev
 ```
 
-## Como correr
+## Instalação e execução
+
+### Instalação automática (recomendado)
+
+- **Windows:** Duplo clique em `install.bat` → depois `run.bat`
+- **Linux:** `chmod +x install.sh run.sh && ./install.sh` → depois `./run.sh`
+
+O instalador cria o ambiente virtual, instala dependências, pastas e Chromium (Playwright). Ver [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) e [INSTALL_LINUX.md](INSTALL_LINUX.md).
+
+### Instalação manual
 
 1. Instala dependências:
    ```bash
@@ -118,9 +127,9 @@ ENV=dev
    ```
 2. Garante que o `.env` está preenchido e que o Sheet está partilhado com a service account.
 3. Executa a app Streamlit:
-   - **Windows:** faz duplo-clique em `run.bat` ou, na pasta do projeto: `run.bat`
-   - **Ou em qualquer SO:** `streamlit run app.py`
-4. Abre o URL que o Streamlit mostrar no browser (normalmente `http://localhost:8501`).
+   - **Windows:** `run.bat` ou `python -m streamlit run app.py --server.port 8502`
+   - **Linux:** `./run.sh` ou `streamlit run app.py --server.port 8502`
+4. Abre **http://localhost:8502** no browser.
 
 ## Fluxo de uso (exemplo)
 

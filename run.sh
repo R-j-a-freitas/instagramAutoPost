@@ -2,10 +2,16 @@
 # Instagram Auto Post – Executar app Streamlit
 cd "$(dirname "$0")"
 
-# Ativar ambiente virtual se existir
+# Verificar se foi instalado
+if [ ! -f ".venv/bin/activate" ] && [ ! -f "venv/bin/activate" ]; then
+    echo "Executa primeiro ./install.sh para instalar as dependências."
+    exit 1
+fi
+
+# Ativar ambiente virtual
 if [ -f ".venv/bin/activate" ]; then
     source .venv/bin/activate
-elif [ -f "venv/bin/activate" ]; then
+else
     source venv/bin/activate
 fi
 

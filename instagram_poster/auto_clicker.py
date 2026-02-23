@@ -111,6 +111,8 @@ def start_session_browser(url: str) -> None:
     _kill_all_cdp_ports()
     try:
         project_root = _COORDS_FILE.parent
+        env = os.environ.copy()
+        env.setdefault("NODE_OPTIONS", "--no-deprecation")
         proc = subprocess.Popen(
             [
                 sys.executable,
@@ -122,7 +124,7 @@ def start_session_browser(url: str) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=str(project_root),
-            env=os.environ.copy(),
+            env=env,
         )
         with _lock:
             _session_process = proc
@@ -244,6 +246,8 @@ def start_preview(url: str) -> None:
         _preview_process = None
     try:
         project_root = _COORDS_FILE.parent
+        env = os.environ.copy()
+        env.setdefault("NODE_OPTIONS", "--no-deprecation")
         proc = subprocess.Popen(
             [
                 sys.executable,
@@ -256,6 +260,7 @@ def start_preview(url: str) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=str(project_root),
+            env=env,
         )
         with _lock:
             _preview_process = proc
@@ -397,12 +402,15 @@ def start(
                 str(interval_seconds),
                 str(max_r),
             ]
+        env = os.environ.copy()
+        env.setdefault("NODE_OPTIONS", "--no-deprecation")
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=str(project_root),
+            env=env,
         )
         with _lock:
             _run_process = proc

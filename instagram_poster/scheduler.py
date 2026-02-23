@@ -8,7 +8,11 @@ from datetime import date, datetime, time
 from typing import Any, Literal, Optional
 
 from instagram_poster import ig_client, sheets_client
-from instagram_poster.config import get_autopublish_story_with_post, get_image_provider
+from instagram_poster.config import (
+    get_autopublish_story_with_music,
+    get_autopublish_story_with_post,
+    get_image_provider,
+)
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 
 logger = logging.getLogger(__name__)
@@ -84,6 +88,10 @@ def publish_post(post: dict[str, Any]) -> str:
     if row_index is None:
         raise ValueError("O post não tem row_index (linha do Sheet).")
 
+    # "yes" e valores não-URL vêm da coluna Image Prompt por engano; tratar como vazio
+    if image_url and not (image_url.startswith("http://") or image_url.startswith("https://")):
+        image_url = ""
+
     if not image_url and (gemini_prompt or image_text):
         provider_name = get_image_provider()
         provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
@@ -116,10 +124,22 @@ def publish_post(post: dict[str, Any]) -> str:
     if get_autopublish_story_with_post():
         try:
             from instagram_poster import autopublish, image_generator
-            story_url = image_generator.get_story_image_url_from_feed_image(image_url)
-            story_creation_id = ig_client.create_story(image_url=story_url)
+            from instagram_poster.reel_generator import get_available_music_tracks
+            with_music = get_autopublish_story_with_music()
+            tracks = get_available_music_tracks() if with_music else []
+            audio_path = None
+            if tracks:
+                audio_path = random.choice(tracks)["path"]
+            if with_music and audio_path:
+                story_url = image_generator.get_story_video_url_from_feed_image(
+                    image_url, audio_path=audio_path, duration_seconds=60.0
+                )
+                story_creation_id = ig_client.create_story(video_url=story_url)
+            else:
+                story_url = image_generator.get_story_image_url_from_feed_image(image_url)
+                story_creation_id = ig_client.create_story(image_url=story_url)
             story_media_id = ig_client.publish_media(story_creation_id, max_wait=180)
-            autopublish.log_story_published(post, media_id=story_media_id)
+            autopublish.log_story_published(post, media_id=story_media_id, source="com_post")
             logger.info("Story publicada automaticamente (post linha %s)", row_index)
         except Exception as e:
             logger.warning("Falha ao publicar Story automatica (post linha %s): %s", row_index, e)
@@ -127,20 +147,43 @@ def publish_post(post: dict[str, Any]) -> str:
     return media_id
 
 
-def publish_story_from_post(post: dict[str, Any]) -> tuple[bool, str, Optional[str]]:
+def publish_story_from_post(
+    post: dict[str, Any],
+    with_music: bool = False,
+    music_track_path: Optional[str] = None,
+    duration_seconds: float = 60.0,
+    source: str = "manual",
+) -> tuple[bool, str, Optional[str]]:
     """
     Gera e publica uma Story no Instagram a partir da imagem de um post (feed).
     Post deve ter image_url preenchido. Devolve (sucesso, mensagem, media_id ou None).
+    Se with_music=True, gera vídeo com áudio (music_track_path ou faixa aleatória da pasta MUSIC).
+    duration_seconds: duração do vídeo (10-59s) quando with_music=True.
     """
     image_url = (post.get("image_url") or "").strip()
     if not image_url:
         return False, "O post não tem ImageURL.", None
     try:
         from instagram_poster import autopublish, image_generator
-        story_url = image_generator.get_story_image_url_from_feed_image(image_url)
-        creation_id = ig_client.create_story(image_url=story_url)
+        from instagram_poster.reel_generator import get_available_music_tracks
+        audio_path = None
+        if with_music:
+            if music_track_path:
+                audio_path = music_track_path
+            else:
+                tracks = get_available_music_tracks()
+                if tracks:
+                    audio_path = random.choice(tracks)["path"]
+        if with_music and audio_path:
+            story_url = image_generator.get_story_video_url_from_feed_image(
+                image_url, audio_path=audio_path, duration_seconds=duration_seconds
+            )
+            creation_id = ig_client.create_story(video_url=story_url)
+        else:
+            story_url = image_generator.get_story_image_url_from_feed_image(image_url)
+            creation_id = ig_client.create_story(image_url=story_url)
         media_id = ig_client.publish_media(creation_id, max_wait=180)
-        autopublish.log_story_published(post, media_id=media_id)
+        autopublish.log_story_published(post, media_id=media_id, source=source)
         return True, f"Story publicada. Media ID: {media_id}", media_id
     except Exception as e:
         logger.exception("Erro ao publicar Story a partir do post")

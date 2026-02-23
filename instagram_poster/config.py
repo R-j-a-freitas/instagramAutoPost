@@ -302,6 +302,7 @@ def get_cloudinary_url() -> str:
 AUTOPUBLISH_ENABLED: str = _optional("AUTOPUBLISH_ENABLED", "false")
 AUTOPUBLISH_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_INTERVAL_MINUTES", "5")
 AUTOPUBLISH_STORY_WITH_POST: str = _optional("AUTOPUBLISH_STORY_WITH_POST", "false")
+AUTOPUBLISH_STORY_WITH_MUSIC: str = _optional("AUTOPUBLISH_STORY_WITH_MUSIC", "false")
 AUTOPUBLISH_STORY_REUSE_SCHEDULE: str = _optional("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "false")
 AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", "120")
 AUTOPUBLISH_REEL_EVERY_5: str = _optional("AUTOPUBLISH_REEL_EVERY_5", "true")
@@ -311,12 +312,12 @@ AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_REEL_REUSE
 
 
 def get_autopublish_enabled() -> bool:
-    val = get_runtime_override("AUTOPUBLISH_ENABLED") or AUTOPUBLISH_ENABLED
+    val = get_runtime_override("AUTOPUBLISH_ENABLED") or os.getenv("AUTOPUBLISH_ENABLED") or AUTOPUBLISH_ENABLED
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_interval() -> int:
-    val = get_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES") or AUTOPUBLISH_INTERVAL_MINUTES
+    val = get_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES") or os.getenv("AUTOPUBLISH_INTERVAL_MINUTES") or AUTOPUBLISH_INTERVAL_MINUTES
     try:
         return max(1, int(val))
     except (ValueError, TypeError):
@@ -325,19 +326,25 @@ def get_autopublish_interval() -> int:
 
 def get_autopublish_story_with_post() -> bool:
     """Se True, publica também uma Story no Instagram quando um post é publicado automaticamente."""
-    val = get_runtime_override("AUTOPUBLISH_STORY_WITH_POST") or AUTOPUBLISH_STORY_WITH_POST
+    val = get_runtime_override("AUTOPUBLISH_STORY_WITH_POST") or os.getenv("AUTOPUBLISH_STORY_WITH_POST") or AUTOPUBLISH_STORY_WITH_POST
+    return val.lower() in ("true", "1", "yes", "on")
+
+
+def get_autopublish_story_with_music() -> bool:
+    """Se True, as Stories são publicadas como vídeo com música (imagem + áudio da pasta MUSIC)."""
+    val = get_runtime_override("AUTOPUBLISH_STORY_WITH_MUSIC") or os.getenv("AUTOPUBLISH_STORY_WITH_MUSIC") or AUTOPUBLISH_STORY_WITH_MUSIC
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_story_reuse_schedule_enabled() -> bool:
     """Se True, publica uma Story (com imagem de um post já publicado) a cada X tempo (intervalo definido)."""
-    val = get_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE") or AUTOPUBLISH_STORY_REUSE_SCHEDULE
+    val = get_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE") or os.getenv("AUTOPUBLISH_STORY_REUSE_SCHEDULE") or AUTOPUBLISH_STORY_REUSE_SCHEDULE
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_story_reuse_interval_minutes() -> int:
     """Intervalo em minutos para a Story agendada (reutilizar post já publicado)."""
-    val = get_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES
+    val = get_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES") or os.getenv("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES
     try:
         return max(30, int(val))
     except (ValueError, TypeError):
@@ -346,25 +353,25 @@ def get_autopublish_story_reuse_interval_minutes() -> int:
 
 def get_autopublish_reel_every_5() -> bool:
     """Se True, gera e publica um Reel automaticamente sempre que houver 5 posts (últimos 5 diferentes)."""
-    val = get_runtime_override("AUTOPUBLISH_REEL_EVERY_5") or AUTOPUBLISH_REEL_EVERY_5
+    val = get_runtime_override("AUTOPUBLISH_REEL_EVERY_5") or os.getenv("AUTOPUBLISH_REEL_EVERY_5") or AUTOPUBLISH_REEL_EVERY_5
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_reel_allow_reused_posts() -> bool:
     """Se True, o Reel automático pode usar posts já usados em Reels anteriores."""
-    val = get_runtime_override("AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS") or AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS
+    val = get_runtime_override("AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS") or os.getenv("AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS") or AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_reel_reuse_schedule_enabled() -> bool:
     """Se True, gera um Reel com posts já usados em Reels a cada X minutos (intervalo definido)."""
-    val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE") or AUTOPUBLISH_REEL_REUSE_SCHEDULE
+    val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE") or os.getenv("AUTOPUBLISH_REEL_REUSE_SCHEDULE") or AUTOPUBLISH_REEL_REUSE_SCHEDULE
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_reel_reuse_interval_minutes() -> int:
     """Intervalo em minutos para o Reel agendado com posts já usados."""
-    val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES
+    val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or os.getenv("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES
     try:
         return max(30, int(val))
     except (ValueError, TypeError):

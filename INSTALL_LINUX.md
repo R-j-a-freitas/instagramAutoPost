@@ -13,6 +13,12 @@ chmod +x install.sh run.sh
 ./install.sh
 ```
 
+O instalador cria automaticamente:
+- Ambiente virtual (`.venv`)
+- Pastas `assets/music/MUSIC` e `tools/ffmpeg`
+- Ficheiro `.env` a partir de `.env.example`
+- Instala dependências e Chromium (Playwright)
+
 ## Passos manuais (alternativa)
 
 ```bash

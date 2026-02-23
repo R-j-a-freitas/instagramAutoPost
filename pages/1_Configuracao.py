@@ -622,6 +622,7 @@ from instagram_poster.config import (
     get_autopublish_reel_reuse_schedule_enabled,
     get_autopublish_story_reuse_interval_minutes,
     get_autopublish_story_reuse_schedule_enabled,
+    get_autopublish_story_with_music,
     get_autopublish_story_with_post,
 )
 
@@ -629,6 +630,7 @@ _ap_running = autopublish.is_running()
 _ap_enabled = get_autopublish_enabled()
 _ap_interval = get_autopublish_interval()
 _ap_story = get_autopublish_story_with_post()
+_ap_story_music = get_autopublish_story_with_music()
 _ap_story_reuse = get_autopublish_story_reuse_schedule_enabled()
 _ap_story_reuse_interval = get_autopublish_story_reuse_interval_minutes()
 _ap_reel = get_autopublish_reel_every_5()
@@ -652,6 +654,17 @@ ap_story = st.toggle(
     value=_ap_story,
     key="config_autopublish_story",
     help="Quando um post e publicado (feed), publica tambem uma Story com a mesma imagem em formato vertical.",
+)
+ap_story_music = st.toggle(
+    "Adicionar musica nas Stories (video com audio da pasta MUSIC)",
+    value=_ap_story_music,
+    key="config_autopublish_story_music",
+    help="Gera um video (ate 60s, maximo da API) com a imagem + musica e publica como Story. Requer moviepy.",
+)
+st.caption(
+    "**Duas fontes de Stories:** (1) Story com cada post — 1 Story por cada post publicado; "
+    "(2) Story reuse — 1 Story a cada X horas com imagem de um post aleatorio. "
+    "Se ambas estiverem activas, o total de Stories e a soma das duas."
 )
 col_story_reuse_toggle, col_story_reuse_time, col_story_reuse_unit = st.columns([2, 1, 0.5])
 with col_story_reuse_toggle:
@@ -703,12 +716,13 @@ with col_reuse_unit:
 # Guardar alteracoes no .env
 ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
 ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
-if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
+if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_music != _ap_story_music or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
         or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
         "AUTOPUBLISH_STORY_WITH_POST": "true" if ap_story else "false",
+        "AUTOPUBLISH_STORY_WITH_MUSIC": "true" if ap_story_music else "false",
         "AUTOPUBLISH_STORY_REUSE_SCHEDULE": "true" if ap_story_reuse else "false",
         "AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES": str(ap_story_reuse_interval),
         "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
@@ -718,6 +732,7 @@ if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
     config.set_runtime_override("AUTOPUBLISH_STORY_WITH_POST", "true" if ap_story else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_WITH_MUSIC", "true" if ap_story_music else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "true" if ap_story_reuse else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", str(ap_story_reuse_interval))
     config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
@@ -799,11 +814,16 @@ if ap_log:
                 st.divider()
 
     # Erros
-    if error_entries:
-        with st.expander(f"Erros ({len(error_entries)})"):
+    with st.expander(f"Erros ({len(error_entries)})"):
+        if st.button("Limpar erros", key="config_clear_errors", disabled=not error_entries):
+            autopublish.clear_error_entries()
+            st.rerun()
+        if error_entries:
             for entry in reversed(error_entries):
                 ts = entry["timestamp"].strftime("%H:%M:%S")
                 st.error(f"[{ts}] {entry['message']}")
+        else:
+            st.caption("Nenhum erro registado.")
 
     # Eventos do sistema (start/stop)
     if other_entries:

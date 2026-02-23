@@ -56,23 +56,28 @@ def create_media(image_url: str, caption: str) -> str:
     return creation_id
 
 
-def create_story(image_url: str) -> str:
+def create_story(image_url: Optional[str] = None, video_url: Optional[str] = None) -> str:
     """
-    Cria um content container para uma Story (imagem 9:16, ex.: 1080x1920).
-    A API do Instagram só aceita JPEG; a imagem deve estar em URL público.
-    POST com JSON body e Bearer token (evita problemas de encoding do image_url na query).
+    Cria um content container para uma Story (imagem ou vídeo 9:16, ex.: 1080x1920).
+    A API do Instagram aceita image_url (JPEG) ou video_url (MP4). A música só entra se estiver dentro do vídeo.
+    POST com JSON body e Bearer token (evita problemas de encoding na query).
     """
     _check_config()
+    if video_url and video_url.strip():
+        media_url = video_url.strip()
+        media_key = "video_url"
+    elif image_url and image_url.strip():
+        media_url = image_url.strip()
+        media_key = "image_url"
+    else:
+        raise ValueError("É obrigatório indicar image_url ou video_url para criar uma Story.")
     ig_id = get_ig_business_id()
     url = _url(f"/{ig_id}/media")
     token = get_ig_access_token()
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-    payload = {
-        "media_type": "STORIES",
-        "image_url": image_url,
-    }
-    logger.info("A criar Story container para image_url=%s", image_url[:80] + "..." if len(image_url) > 80 else image_url)
-    resp = requests.post(url, json=payload, headers=headers, timeout=30)
+    payload = {"media_type": "STORIES", media_key: media_url}
+    logger.info("A criar Story container para %s=%s", media_key, media_url[:80] + "..." if len(media_url) > 80 else media_url)
+    resp = requests.post(url, json=payload, headers=headers, timeout=60 if media_key == "video_url" else 30)
     try:
         resp.raise_for_status()
     except requests.HTTPError as e:

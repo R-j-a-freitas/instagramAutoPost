@@ -10,9 +10,12 @@ numa descrição visual via LLM e o texto é sobreposto depois via Pillow.
 import io
 import logging
 import re
+import tempfile
 import textwrap
+from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import requests
 
 from instagram_poster.config import (
@@ -307,6 +310,82 @@ def get_story_image_url_from_feed_image(feed_image_url: str) -> str:
     image_bytes = _download_image(feed_image_url.strip())
     story_bytes = _image_to_story_frame(image_bytes)
     return upload_image_to_cloudinary(story_bytes, public_id_prefix="ig_story")
+
+
+def _image_to_vertical_frame_np(image_bytes: bytes) -> np.ndarray:
+    """
+    Converte imagem em frame vertical 1080x1920 (array RGB para MoviePy).
+    Reutiliza a lógica de _image_to_story_frame mas devolve numpy array.
+    """
+    from PIL import Image, ImageFilter
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+    if w < 100 or h < 100:
+        raise ValueError("Imagem demasiado pequena para Story")
+    sw, sh = 1080, 1920
+    bg = img.resize((sw, sh), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(radius=25))
+    box_size = min(1080, w, h)
+    square = img.resize((box_size, box_size), Image.Resampling.LANCZOS)
+    x = (sw - square.width) // 2
+    y = (sh - square.height) // 2
+    bg.paste(square, (x, y))
+    return np.array(bg)
+
+
+def get_story_video_url_from_feed_image(
+    feed_image_url: str,
+    audio_path: Optional[str] = None,
+    duration_seconds: float = 10.0,
+) -> str:
+    """
+    Gera um vídeo curto (5-15s) com a imagem do post + áudio opcional para Story.
+    Faz upload para Cloudinary e devolve o URL para create_story(video_url=...).
+    A música só entra se estiver dentro do vídeo (a API do Instagram não suporta sticker de música).
+    """
+    if not (feed_image_url or "").strip():
+        raise ValueError("URL da imagem do post está vazio.")
+    try:
+        from moviepy import AudioFileClip, ImageClip, concatenate_audioclips, afx
+    except ImportError as e:
+        raise ImportError(
+            "moviepy não encontrado. Instala com: pip install moviepy imageio-ffmpeg"
+        ) from e
+
+    from instagram_poster.reel_generator import upload_video_to_cloudinary
+
+    logger.info("A gerar vídeo Story com música a partir do post: %s", feed_image_url[:80])
+    image_bytes = _download_image(feed_image_url.strip())
+    frame = _image_to_vertical_frame_np(image_bytes)
+    clip = ImageClip(frame, duration=min(60.0, max(1.0, duration_seconds)))
+
+    if audio_path and Path(audio_path).exists():
+        audio = AudioFileClip(audio_path)
+        audio = audio.with_effects([afx.MultiplyVolume(0.3)])
+        if audio.duration < clip.duration:
+            loops = int(clip.duration / audio.duration) + 1
+            audio = concatenate_audioclips([audio] * loops)
+        audio = audio.subclipped(0, clip.duration)
+        audio = audio.with_effects([afx.AudioFadeOut(1.0)])
+        clip = clip.with_audio(audio)
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        clip.write_videofile(
+            tmp_path,
+            fps=30,
+            codec="libx264",
+            audio_codec="aac" if audio_path else None,
+            logger=None,
+        )
+        with open(tmp_path, "rb") as f:
+            video_bytes = f.read()
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return upload_video_to_cloudinary(video_bytes, public_id_prefix="ig_story")
 
 
 _QUOTE_CARD_PROMPT = (

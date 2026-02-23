@@ -40,7 +40,7 @@ st.title("Instagram Auto Post")
 st.caption("Publicação via Instagram Graph API + Google Sheet")
 
 st.markdown("### Acesso rapido")
-col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
 with col1:
     if st.button("⚙️ Configuracao", use_container_width=True):
         st.switch_page("pages/1_Configuracao.py")
@@ -62,6 +62,9 @@ with col6:
 with col7:
     if st.button("🎵 YouTube Áudio", use_container_width=True):
         st.switch_page("pages/6_YouTube_Audio.py")
+with col8:
+    if st.button("🖱️ Auto Click", use_container_width=True):
+        st.switch_page("pages/7_AutoClick.py")
 
 st.markdown("""
 ### Como usar
@@ -80,4 +83,6 @@ st.markdown("""
 6. **Reels** -- Gera um video slideshow (9:16) a partir dos ultimos posts publicados, com opcao de musica (upload ou biblioteca ambient), e publica no Instagram.
 
 7. **YouTube Áudio** -- Cola o link de um vídeo do YouTube e descarrega o áudio em MP3; podes guardar na pasta de música dos Reels.
+
+8. **Auto Click** -- Automatiza cliques numa página do browser (ex.: Instagram). Arranca o browser, autentica manualmente, define até 5 coordenadas na grelha e inicia ciclos de cliques com refresh. Útil para tarefas repetitivas como seguir utilizadores ou interagir com conteúdo.
 """)
