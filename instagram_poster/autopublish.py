@@ -201,6 +201,7 @@ def _add_log_entry(
     entry_type: str = "info",
     post_data: Optional[dict[str, Any]] = None,
     media_id: Optional[str] = None,
+    story_source: Optional[str] = None,
 ):
     global _total_published, _total_errors
     with _lock:
@@ -211,6 +212,8 @@ def _add_log_entry(
             "type": entry_type,
             "media_id": media_id,
         }
+        if story_source is not None:
+            entry["story_source"] = story_source
         if post_data:
             entry["row"] = post_data.get("row_index")
             entry["date"] = post_data.get("date", "")

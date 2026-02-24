@@ -23,3 +23,4 @@ instagramAutoPost/
 .autopublish_log.json
 .autopublish_stopped
 .comment_autoreply_replied.json
+.comment_autoreply_replied/

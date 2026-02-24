@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instagram Auto Post — Apresentação Comercial</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f0f; color: #fff; overflow: hidden; }
+    .slide {
+      display: none;
+      position: absolute; inset: 0;
+      padding: 4rem 5rem;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .slide.active { display: flex; animation: fade 0.4s ease; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    h1 { font-size: 2.5rem; margin-bottom: 0.5rem; color: #e1306c; }
+    h2 { font-size: 1.5rem; font-weight: 400; color: #aaa; margin-bottom: 2rem; }
+    p { font-size: 1.2rem; line-height: 1.7; max-width: 700px; margin-bottom: 1rem; }
+    ul { margin: 1.5rem 0; padding-left: 1.5rem; font-size: 1.15rem; line-height: 2; }
+    table { border-collapse: collapse; width: 100%; max-width: 600px; margin: 1.5rem 0; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #333; }
+    th { color: #e1306c; font-weight: 600; }
+    .tag { display: inline-block; background: #e1306c; color: #fff; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; margin: 0.25rem 0.25rem 0 0; }
+    .flow { font-family: monospace; font-size: 1rem; color: #8a8; padding: 1rem; background: #1a1a1a; border-radius: 8px; margin: 1rem 0; }
+    .nav { position: fixed; bottom: 2rem; right: 2rem; display: flex; gap: 1rem; }
+    .nav button { padding: 0.75rem 1.5rem; font-size: 1rem; cursor: pointer; background: #e1306c; color: #fff; border: none; border-radius: 8px; }
+    .nav button:hover { background: #c13584; }
+    .counter { position: fixed; bottom: 2rem; left: 2rem; color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="slide active" data-n="1">
+    <h1>Instagram Auto Post</h1>
+    <h2>Automação de Marketing para Instagram</h2>
+    <p>Apresentação comercial — Plataforma de publicação automática integrada com Google Sheets e IA</p>
+  </div>
+
+  <div class="slide" data-n="2">
+    <h1>O desafio das empresas</h1>
+    <ul>
+      <li><strong>Tempo</strong> — Publicar no Instagram consome horas por semana</li>
+      <li><strong>Consistência</strong> — Manter um calendário editorial é difícil</li>
+      <li><strong>Escala</strong> — Uma pessoa não consegue gerir múltiplas contas</li>
+      <li><strong>Engajamento</strong> — Responder a comentários manualmente é moroso</li>
+    </ul>
+  </div>
+
+  <div class="slide" data-n="3">
+    <h1>A solução</h1>
+    <p><strong>Instagram Auto Post</strong> — Plataforma que publica posts, Stories e Reels de forma programada.</p>
+    <ul>
+      <li>API oficial do Instagram (sem risco de bloqueio)</li>
+      <li>Publicação automática na hora agendada</li>
+      <li>Geração de conteúdo com IA (Gemini)</li>
+      <li>Autoresposta a comentários</li>
+    </ul>
+  </div>
+
+  <div class="slide" data-n="4">
+    <h1>Principais funcionalidades</h1>
+    <table>
+      <tr><th>Módulo</th><th>Descrição</th></tr>
+      <tr><td>Posts</td><td>Publicação automática de imagens com legenda</td></tr>
+      <tr><td>Stories</td><td>Stories automáticas com cada post ou reutilização</td></tr>
+      <tr><td>Reels</td><td>Vídeos slideshow com música, publicação automática</td></tr>
+      <tr><td>Comentários</td><td>Autoresposta com emoji (uma resposta por comentário)</td></tr>
+      <tr><td>Conteúdo IA</td><td>Geração de quotes, captions e imagens com Gemini</td></tr>
+    </table>
+  </div>
+
+  <div class="slide" data-n="5">
+    <h1>Fluxo de trabalho</h1>
+    <div class="flow">Google Sheet (calendário) → App verifica → Publica no Instagram<br>
+    Data, Hora, Texto, Imagem → Post pronto? → Feed, Story, Reel</div>
+    <p><strong>Uma única fonte de verdade</strong> — O Google Sheet é o calendário. A equipa edita; a app publica.</p>
+  </div>
+
+  <div class="slide" data-n="6">
+    <h1>Integrações</h1>
+    <p><span class="tag">Instagram Graph API</span> <span class="tag">Google Sheets</span> <span class="tag">Google Gemini</span> <span class="tag">Cloudinary</span> <span class="tag">Task Scheduler</span></p>
+    <p style="margin-top: 2rem;">Publicação 24/7 sem browser aberto. Instalação em minutos.</p>
+  </div>
+
+  <div class="slide" data-n="7">
+    <h1>Casos de uso</h1>
+    <ul>
+      <li><strong>Agências</strong> — Gerir múltiplas contas de clientes</li>
+      <li><strong>Marcas e e-commerce</strong> — Promoções e conteúdo inspiracional</li>
+      <li><strong>Influenciadores</strong> — Presença consistente sem esforço</li>
+      <li><strong>PMEs</strong> — Presença digital profissional</li>
+    </ul>
+  </div>
+
+  <div class="slide" data-n="8">
+    <h1>Vantagens competitivas</h1>
+    <ul>
+      <li>✅ API oficial — Sem risco de bloqueio</li>
+      <li>✅ Automação completa — Posts, Stories, Reels, Comentários</li>
+      <li>✅ Escalável — Publicação 24/7 com Task Scheduler</li>
+      <li>✅ IA integrada — Geração de conteúdo e imagens</li>
+      <li>✅ Controlo total — Calendário editável em tempo real</li>
+    </ul>
+  </div>
+
+  <div class="slide" data-n="9">
+    <h1>Modelo de negócio sugerido</h1>
+    <table>
+      <tr><th>Opção</th><th>Descrição</th></tr>
+      <tr><td>Licença por conta</td><td>Preço fixo mensal por conta Instagram</td></tr>
+      <tr><td>White-label</td><td>Revenda com a tua marca</td></tr>
+      <tr><td>Implementação</td><td>Configuração e formação</td></tr>
+      <tr><td>Suporte</td><td>Manutenção e actualizações</td></tr>
+    </table>
+  </div>
+
+  <div class="slide" data-n="10">
+    <h1>Próximos passos</h1>
+    <ol style="margin: 1.5rem 0; padding-left: 1.5rem; font-size: 1.2rem; line-height: 2.5;">
+      <li><strong>Demo</strong> — Demonstração ao vivo</li>
+      <li><strong>Piloto</strong> — Teste com 1–2 contas (30 dias)</li>
+      <li><strong>Implementação</strong> — Configuração e formação</li>
+      <li><strong>Escalagem</strong> — Expansão para mais contas</li>
+    </ol>
+    <p style="margin-top: 2rem; color: #e1306c; font-size: 1.3rem;">Instagram Auto Post — Automação inteligente para o teu Instagram</p>
+  </div>
+
+  <div class="counter"><span id="current">1</span> / <span id="total">10</span></div>
+  <div class="nav">
+    <button id="prev">← Anterior</button>
+    <button id="next">Seguinte →</button>
+  </div>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const total = slides.length;
+    let current = 0;
+    document.getElementById('total').textContent = total;
+
+    function show(i) {
+      current = (i + total) % total;
+      slides.forEach((s, j) => s.classList.toggle('active', j === current));
+      document.getElementById('current').textContent = current + 1;
+    }
+    document.getElementById('prev').onclick = () => show(current - 1);
+    document.getElementById('next').onclick = () => show(current + 1);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); show(current + 1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); show(current - 1); }
+    });
+  </script>
+</body>
+</html>
