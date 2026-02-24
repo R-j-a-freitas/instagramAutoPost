@@ -31,7 +31,8 @@ from instagram_poster import autopublish, image_generator
 from instagram_poster.scheduler import publish_story_from_post
 from instagram_poster.sheets_client import get_published_posts_with_image, get_published_rows_missing_image_url, update_image_url
 
-# Métrica
+# Métrica (get_log primeiro para recarregar do ficheiro se outro processo gravou)
+_ = autopublish.get_log()
 stats = autopublish.get_stats()
 st.metric("Stories publicadas (sessão)", stats.get("total_stories", 0))
 

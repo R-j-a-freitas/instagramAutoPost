@@ -228,3 +228,56 @@ def publish_media(creation_id: str, max_wait: int = 120) -> str:
         logger.error("Resposta sem 'id': %s", data)
         raise ValueError("Resposta da API sem media ID")
     return media_id
+
+
+def get_media_ids(limit: int = 25) -> list[str]:
+    """
+    Obtém os IDs dos media (posts, reels) do utilizador.
+    GET /{ig-user-id}/media
+    Devolve lista de media IDs (máx. limit).
+    """
+    _check_config()
+    ig_id = get_ig_business_id()
+    url = _url(f"/{ig_id}/media")
+    params = {"fields": "id", "access_token": get_ig_access_token(), "limit": min(limit, 50)}
+    resp = requests.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("data") or []
+    return [x["id"] for x in items if x.get("id")]
+
+
+def get_comments(media_id: str) -> list[dict]:
+    """
+    Obtém os comentários de um media (apenas top-level).
+    GET /{media-id}/comments?fields=id,text,username,timestamp,replies
+    """
+    _check_config()
+    url = _url(f"/{media_id}/comments")
+    params = {
+        "fields": "id,text,username,timestamp,replies{id,from}",
+        "access_token": get_ig_access_token(),
+    }
+    resp = requests.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("data") or []
+
+
+def reply_to_comment(comment_id: str, message: str) -> str:
+    """
+    Responde a um comentário.
+    POST /{comment-id}/replies?message=...
+    Devolve o ID do comentário de resposta criado.
+    Requer permissão instagram_business_manage_comments.
+    """
+    _check_config()
+    url = _url(f"/{comment_id}/replies")
+    params = {"message": message[:300], "access_token": get_ig_access_token()}
+    resp = requests.post(url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    reply_id = data.get("id")
+    if not reply_id:
+        raise ValueError("Resposta da API sem ID da reply")
+    return reply_id

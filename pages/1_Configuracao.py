@@ -615,6 +615,7 @@ st.caption("Publica posts automaticamente na hora agendada no Sheet. Funciona co
 
 from instagram_poster import autopublish
 from instagram_poster.config import (
+    get_autopublish_comment_autoreply,
     get_autopublish_enabled,
     get_autopublish_interval,
     get_autopublish_reel_every_5,
@@ -712,6 +713,12 @@ with col_reuse_time:
     )
 with col_reuse_unit:
     st.caption("h")
+ap_comment_autoreply = st.toggle(
+    "Autoresposta a comentários em cada verificação",
+    value=_ap_comment_autoreply,
+    key="config_autopublish_comment_autoreply",
+    help="Em cada ciclo do autopublish, responde aos comentários nos teus posts com 🙏 (emoji de agradecimento).",
+)
 
 # Guardar alteracoes no .env
 ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
@@ -728,6 +735,7 @@ if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_
         "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
         "AUTOPUBLISH_REEL_REUSE_SCHEDULE": "true" if ap_reel_reuse else "false",
         "AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES": str(ap_reel_reuse_interval),
+        "AUTOPUBLISH_COMMENT_AUTOREPLY": "true" if ap_comment_autoreply else "false",
     })
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
@@ -738,6 +746,7 @@ if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_
     config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
     config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "true" if ap_reel_reuse else "false")
     config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", str(ap_reel_reuse_interval))
+    config.set_runtime_override("AUTOPUBLISH_COMMENT_AUTOREPLY", "true" if ap_comment_autoreply else "false")
 
 # Botoes iniciar/parar
 col_ap1, col_ap2, _ = st.columns([1, 1, 2])
@@ -751,7 +760,8 @@ with col_ap1:
             autopublish.start_background_loop(interval_minutes=ap_interval)
             st.rerun()
 
-# Estado e estatisticas
+# Estado e estatisticas (get_log primeiro para recarregar do ficheiro se outro processo gravou)
+_ = autopublish.get_log()
 stats = autopublish.get_stats()
 last_check = autopublish.get_last_check()
 

@@ -309,6 +309,7 @@ AUTOPUBLISH_REEL_EVERY_5: str = _optional("AUTOPUBLISH_REEL_EVERY_5", "true")
 AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS: str = _optional("AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS", "false")
 AUTOPUBLISH_REEL_REUSE_SCHEDULE: str = _optional("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "false")
 AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", "120")
+AUTOPUBLISH_COMMENT_AUTOREPLY: str = _optional("AUTOPUBLISH_COMMENT_AUTOREPLY", "false")
 
 
 def get_autopublish_enabled() -> bool:
@@ -373,9 +374,15 @@ def get_autopublish_reel_reuse_interval_minutes() -> int:
     """Intervalo em minutos para o Reel agendado com posts já usados."""
     val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or os.getenv("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES
     try:
-        return max(30, int(val))
+        return max(30, int(float(val)))
     except (ValueError, TypeError):
         return 120
+
+
+def get_autopublish_comment_autoreply() -> bool:
+    """Se True, executa autoresposta a comentários em cada verificação do autopublish."""
+    val = get_runtime_override("AUTOPUBLISH_COMMENT_AUTOREPLY") or os.getenv("AUTOPUBLISH_COMMENT_AUTOREPLY") or AUTOPUBLISH_COMMENT_AUTOREPLY
+    return val.lower() in ("true", "1", "yes", "on")
 
 
 # --- Ambiente (dev/prod) ---

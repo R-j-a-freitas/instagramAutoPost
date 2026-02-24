@@ -37,6 +37,15 @@ def main():
         logger.exception("Autopublish CLI: erro inesperado")
         sys.exit(1)
 
+    try:
+        if config.get_autopublish_comment_autoreply():
+            from instagram_poster.comment_autoreply import run_autoreply
+            r = run_autoreply(message="🙏", max_media=5, delay_seconds=1.0)
+            if r.get("replied", 0) > 0:
+                logger.info("Autopublish CLI: autoresposta a %d comentário(s)", r["replied"])
+    except Exception:
+        logger.exception("Autopublish CLI: erro na autoresposta a comentários")
+
 
 if __name__ == "__main__":
     main()

@@ -26,6 +26,7 @@ _stop_event = threading.Event()
 _thread: Optional[threading.Thread] = None
 
 _log: list[dict[str, Any]] = []
+_last_log_file_mtime: float = 0.0  # mtime do ficheiro na última carga; permite recarregar quando outro processo (ex. Task Scheduler) grava
 _last_check: Optional[datetime] = None
 _started_at: Optional[datetime] = None
 _total_published: int = 0
@@ -55,7 +56,7 @@ def _deserialize_log_entry(e: dict[str, Any]) -> dict[str, Any]:
 
 def _load_log_from_file() -> None:
     """Carrega o log do ficheiro para memória e restaura timestamps da última Story/Reel."""
-    global _log, _total_published, _total_errors, _last_reel_at, _last_story_reuse_at
+    global _log, _total_published, _total_errors, _last_reel_at, _last_story_reuse_at, _last_log_file_mtime
     if not _LOG_FILE.exists():
         return
     try:
@@ -64,6 +65,7 @@ def _load_log_from_file() -> None:
             loaded = [_deserialize_log_entry(e) for e in data]
             with _lock:
                 _log[:] = loaded[-100:]
+                _last_log_file_mtime = _LOG_FILE.stat().st_mtime
                 _total_published = sum(1 for x in _log if x.get("type") == "publish" and x.get("success") is True)
                 _total_errors = sum(1 for x in _log if x.get("type") == "error" and x.get("success") is False)
                 _last_reel_at = None
@@ -84,11 +86,14 @@ def _load_log_from_file() -> None:
 
 def _save_log_to_file() -> None:
     """Persiste o log em ficheiro para sobreviver à navegação e reinícios."""
+    global _last_log_file_mtime
     try:
         with _lock:
             data = [_serialize_log_entry(e) for e in _log]
         _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         _LOG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=0), encoding="utf-8")
+        if _LOG_FILE.exists():
+            _last_log_file_mtime = _LOG_FILE.stat().st_mtime
     except Exception as e:
         logger.warning("Não foi possível gravar log do autopublish: %s", e)
 
@@ -150,8 +155,10 @@ def clear_error_entries() -> int:
 def get_log() -> list[dict[str, Any]]:
     need_load = False
     with _lock:
-        if not _log and _LOG_FILE.exists():
-            need_load = True
+        if _LOG_FILE.exists():
+            mtime = _LOG_FILE.stat().st_mtime
+            if not _log or mtime > _last_log_file_mtime:
+                need_load = True
     if need_load:
         _load_log_from_file()
     trim_old_check_entries(max_age_hours=48)
@@ -558,6 +565,15 @@ def _loop(interval_minutes: int):
             try_publish_story_reuse_scheduled()
         except Exception:
             logger.exception("Autopublish: erro ao tentar Story reuse agendada")
+        try:
+            from instagram_poster.config import get_autopublish_comment_autoreply
+            if get_autopublish_comment_autoreply():
+                from instagram_poster.comment_autoreply import run_autoreply
+                result = run_autoreply(message="🙏", max_media=5, delay_seconds=1.0)
+                if result.get("replied", 0) > 0:
+                    logger.info("Autopublish: autoresposta a %d comentário(s)", result["replied"])
+        except Exception:
+            logger.exception("Autopublish: erro ao executar autoresposta a comentários")
         _stop_event.wait(timeout=interval_secs)
     logger.info("Autopublish: thread parado")
 

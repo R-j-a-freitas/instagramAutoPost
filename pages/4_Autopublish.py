@@ -29,6 +29,7 @@ st.caption("Publicacao automatica na hora agendada no Sheet. Configura e control
 
 from instagram_poster import autopublish, config
 from instagram_poster.config import (
+    get_autopublish_comment_autoreply,
     get_autopublish_enabled,
     get_autopublish_interval,
     get_autopublish_reel_every_5,
@@ -51,6 +52,7 @@ _ap_story_reuse_interval = get_autopublish_story_reuse_interval_minutes()
 _ap_reel = get_autopublish_reel_every_5()
 _ap_reel_reuse = get_autopublish_reel_reuse_schedule_enabled()
 _ap_reel_reuse_interval = get_autopublish_reel_reuse_interval_minutes()
+_ap_comment_autoreply = get_autopublish_comment_autoreply()
 
 # ========== Menu Autopublish ==========
 st.subheader("Menu Autopublish")
@@ -129,12 +131,19 @@ with col_reuse_time:
     )
 with col_reuse_unit:
     st.caption("h")
+ap_comment_autoreply = st.toggle(
+    "Autoresposta a comentários em cada verificação",
+    value=_ap_comment_autoreply,
+    key="ap_menu_comment_autoreply",
+    help="Em cada ciclo do autopublish, responde aos comentários nos teus posts com 🙏 (emoji de agradecimento).",
+)
 
 # Guardar alteracoes no .env
 ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
 ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
 if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_music != _ap_story_music or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
-        or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval):
+        or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval
+        or ap_comment_autoreply != _ap_comment_autoreply):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
@@ -155,6 +164,7 @@ if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_
     config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
     config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "true" if ap_reel_reuse else "false")
     config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", str(ap_reel_reuse_interval))
+    config.set_runtime_override("AUTOPUBLISH_COMMENT_AUTOREPLY", "true" if ap_comment_autoreply else "false")
 
 # Se autopublish esta activado mas o thread nao corre, arrancar automaticamente (evita "bloqueado")
 if ap_enabled and not _ap_running:
@@ -195,7 +205,8 @@ elif ap_enabled:
 else:
     st.warning("Autopublish desactivado. Activa o interruptor acima.")
 
-# Metricas
+# Metricas (get_log primeiro para recarregar do ficheiro se outro processo gravou)
+_ = autopublish.get_log()
 stats = autopublish.get_stats()
 last_check = autopublish.get_last_check()
 
@@ -284,9 +295,9 @@ if ap_log:
 
     _ORIGEM_LABELS = {"reuse": "Reuse", "com_post": "Com post", "aleatorio": "Aleatório", "manual": "Manual"}
 
-    if story_entries:
-        with st.expander(f"Stories postadas ({len(story_entries)})", expanded=True):
-            st.caption("Stories publicadas automaticamente com cada post ou manualmente na página Stories.")
+    with st.expander(f"Stories postadas ({len(story_entries)})", expanded=bool(story_entries)):
+        st.caption("Stories publicadas automaticamente com cada post ou manualmente na página Stories.")
+        if story_entries:
             for entry in reversed(story_entries):
                 ts = entry["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
                 quote = entry.get("quote", "")
@@ -312,6 +323,8 @@ if ap_log:
                 if detail_parts:
                     st.caption(" | ".join(detail_parts))
                 st.divider()
+        else:
+            st.caption("Nenhuma Story registada.")
 
     with st.expander(f"Erros ({len(error_entries)})"):
         if st.button("Limpar erros", key="ap_clear_errors", disabled=not error_entries):

@@ -1,6 +1,11 @@
 {
   "tracks": [
     {
+      "file": "'KPop Demon Hunters' perform _Golden_.mp3",
+      "name": "'KPop Demon Hunters' perform _Golden_",
+      "duration_s": 0
+    },
+    {
       "file": "3 Most Beautiful _ Popular Hans Zimmer Pieces.mp3",
       "name": "3 Most Beautiful _ Popular Hans Zimmer Pieces",
       "duration_s": 0
@@ -14,6 +19,11 @@
       "file": "Benson Boone - Beautiful Things (Official Music Video) [Oa_RSwwpPaA].mp3",
       "name": "Benson Boone - Beautiful Things",
       "duration_s": 200
+    },
+    {
+      "file": "Helvegen - Wardruna.mp3",
+      "name": "Helvegen - Wardruna",
+      "duration_s": 0
     },
     {
       "file": "Hozier - Take Me To Church [PVjiKRfKpPI].mp3",
@@ -33,6 +43,16 @@
     {
       "file": "JVKE - GOLDEN HOUR __ Beautiful Piano Cover (Sheet Music).mp3",
       "name": "JVKE - GOLDEN HOUR __ Beautiful Piano Cover (Sheet Music)",
+      "duration_s": 0
+    },
+    {
+      "file": "Lavrans Svendsen Covers Stay by Rihanna _ The Voice Norway.mp3",
+      "name": "Lavrans Svendsen Covers Stay by Rihanna _ The Voice Norway",
+      "duration_s": 0
+    },
+    {
+      "file": "Love Me Like You Do Lyrics - Ellie Goulding #lyricsvideo #shorts #natalylofi #music #lovesongs.mp3",
+      "name": "Love Me Like You Do Lyrics - Ellie Goulding #lyricsvideo #shorts #natalylofi #music #lovesongs",
       "duration_s": 0
     },
     {
@@ -71,6 +91,11 @@
       "duration_s": 210
     },
     {
+      "file": "This Chant Wasn’t Meant to Be This Deep.mp3",
+      "name": "This Chant Wasn’t Meant to Be This Deep",
+      "duration_s": 0
+    },
+    {
       "file": "Tony Ann – ICARUS [Virtuosic Piano Solo].mp3",
       "name": "Tony Ann – ICARUS [Virtuosic Piano Solo]",
       "duration_s": 0
@@ -78,6 +103,11 @@
     {
       "file": "Torn (Australian Idol Performance).mp3",
       "name": "Torn (Australian Idol Performance)",
+      "duration_s": 0
+    },
+    {
+      "file": "VALKIRIA ☽ Margaret Wolf ☾.mp3",
+      "name": "VALKIRIA ☽ Margaret Wolf ☾",
       "duration_s": 0
     }
   ]
