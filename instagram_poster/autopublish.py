@@ -6,17 +6,58 @@ Motor de publicacao automatica.
 """
 import json
 import logging
+import os
 import random
 import threading
 import time as _time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 
 logger = logging.getLogger(__name__)
 
-_LOG_FILE = Path(__file__).resolve().parent.parent / ".autopublish_log.json"
-_STOPPED_FILE = Path(__file__).resolve().parent.parent / ".autopublish_stopped"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_LOG_FILE = _PROJECT_ROOT / ".autopublish_log.json"
+_STOPPED_FILE = _PROJECT_ROOT / ".autopublish_stopped"
+_REEL_LOCK_FILE = _PROJECT_ROOT / ".autopublish_reel.lock"
+_STORY_REUSE_LOCK_FILE = _PROJECT_ROOT / ".autopublish_story_reuse.lock"
+_MEDIA_LOCK_STALE_SEC = 120  # lock com mais de 2 min é considerado órfão
+
+
+@contextmanager
+def _file_lock(lock_path: Path) -> Generator[bool, None, None]:
+    """
+    Lock entre processos. Se outro processo tiver o lock activo, devolve False.
+    """
+    acquired = False
+    fd = None
+    try:
+        if lock_path.exists():
+            mtime = lock_path.stat().st_mtime
+            if _time.time() - mtime < _MEDIA_LOCK_STALE_SEC:
+                yield False
+                return
+            try:
+                lock_path.unlink()
+            except OSError:
+                yield False
+                return
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            yield False
+            return
+        acquired = True
+        yield True
+    finally:
+        if acquired and fd is not None:
+            try:
+                os.close(fd)
+                lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
 
 _REEL_MARK_USED_RETRIES = 3
 _REEL_MARK_USED_RETRY_DELAY_SEC = 2
@@ -333,7 +374,18 @@ def try_publish_auto_reel() -> bool:
     gera um Reel (8s/slide, fade, áudio aleatório da pasta MUSIC, caption que resume
     os posts) e publica no Instagram. Retorna True se publicou, False caso contrário.
     O Reel automático usa apenas posts nunca usados em Reels (allow_reuse=False).
+    Usa lock entre processos para evitar duplicados.
     """
+    global _last_reel_row_indices
+    with _file_lock(_REEL_LOCK_FILE) as lock_ok:
+        if not lock_ok:
+            logger.info("Outro processo a publicar Reel; a ignorar para evitar duplicado.")
+            return False
+        return _try_publish_auto_reel_impl()
+
+
+def _try_publish_auto_reel_impl() -> bool:
+    """Implementação de try_publish_auto_reel (chamada dentro do lock)."""
     global _last_reel_row_indices
     try:
         from instagram_poster.reel_generator import (
@@ -420,7 +472,18 @@ def try_publish_reel_reuse_scheduled() -> bool:
     Se estiver activo o agendamento de Reels com reutilização, e tiver passado o intervalo
     desde o último Reel (auto ou reuse), gera um Reel com 5 posts (podem ser já usados) e publica.
     Não marca os posts como usados (são reutilizados). Retorna True se publicou.
+    Usa lock entre processos para evitar duplicados.
     """
+    global _last_reel_at
+    with _file_lock(_REEL_LOCK_FILE) as lock_ok:
+        if not lock_ok:
+            logger.info("Outro processo a publicar Reel; a ignorar para evitar duplicado.")
+            return False
+        return _try_publish_reel_reuse_impl()
+
+
+def _try_publish_reel_reuse_impl() -> bool:
+    """Implementação de try_publish_reel_reuse_scheduled (chamada dentro do lock)."""
     global _last_reel_at
     try:
         from instagram_poster.config import (
@@ -494,8 +557,18 @@ def try_publish_story_reuse_scheduled() -> bool:
     """
     Se estiver activo o agendamento de Stories com reutilização, e tiver passado o intervalo
     desde a última Story (reuse), publica uma Story usando a imagem do último post publicado.
-    Retorna True se publicou.
+    Retorna True se publicou. Usa lock entre processos para evitar duplicados.
     """
+    global _last_story_reuse_at
+    with _file_lock(_STORY_REUSE_LOCK_FILE) as lock_ok:
+        if not lock_ok:
+            logger.info("Outro processo a publicar Story reuse; a ignorar para evitar duplicado.")
+            return False
+        return _try_publish_story_reuse_impl()
+
+
+def _try_publish_story_reuse_impl() -> bool:
+    """Implementação de try_publish_story_reuse_scheduled (chamada dentro do lock)."""
     global _last_story_reuse_at
     try:
         from instagram_poster.config import (

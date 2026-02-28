@@ -23,6 +23,8 @@ instagramAutoPost/
 .autopublish_log.json
 .autopublish_stopped
 .autopublish_publish.lock
+.autopublish_reel.lock
+.autopublish_story_reuse.lock
 .comment_autoreply_replied.json
 .comment_autoreply_replied.json.bak
 .comment_autoreply_replied.json.lock
