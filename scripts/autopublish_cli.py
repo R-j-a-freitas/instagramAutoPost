@@ -8,9 +8,17 @@ Exit codes: 0 = publicado ou nada a publicar, 1 = erro
 import sys
 import os
 import logging
+from pathlib import Path
 
 # Garantir que o directorio raiz do projecto esta no path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
+
+# Recarregar .env antes de importar config (garante valores actualizados)
+_env_path = _project_root / ".env"
+if _env_path.exists():
+    from dotenv import load_dotenv
+    load_dotenv(_env_path, override=True)
 
 from instagram_poster import config  # noqa: F401 — carrega .env e patch IPv4
 from instagram_poster.autopublish import run_once

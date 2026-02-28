@@ -22,6 +22,7 @@ instagramAutoPost/
 .autoclick_session_browser_data/
 .autopublish_log.json
 .autopublish_stopped
+.autopublish_publish.lock
 .comment_autoreply_replied.json
 .comment_autoreply_replied.json.bak
 .comment_autoreply_replied.json.lock

@@ -4,24 +4,12 @@ Quando um JSON é carregado na UI, as variáveis relevantes são escritas no .en
 para manter consistência e evitar transtornos.
 """
 from pathlib import Path
-from typing import Optional
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _get_env_paths() -> list[Path]:
-    """Devolve lista de caminhos .env a tentar (prioridade). Mesma ordem que config.py."""
-    return [
-        _PROJECT_ROOT / ".env",
-        _PROJECT_ROOT / "instagramAutoPost" / ".env",
-    ]
-
-
-def get_env_path() -> Optional[Path]:
-    """Devolve o primeiro .env existente, ou o da raiz do projeto para criar."""
-    for p in _get_env_paths():
-        if p.exists():
-            return p
+def get_env_path() -> Path:
+    """Devolve o caminho do .env na raiz do projeto."""
     return _PROJECT_ROOT / ".env"
 
 

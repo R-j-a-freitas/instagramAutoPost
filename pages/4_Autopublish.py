@@ -171,6 +171,23 @@ if ap_enabled and not _ap_running:
     autopublish.start_background_loop(interval_minutes=ap_interval)
     st.rerun()
 
+# Botão para forçar gravação no .env (útil para Task Scheduler)
+if st.button("Guardar configuração no .env", key="ap_force_save", help="Grava os toggles no .env para o Task Scheduler usar. Faz isto após alterar opções."):
+    update_env_vars({
+        "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
+        "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
+        "AUTOPUBLISH_STORY_WITH_POST": "true" if ap_story else "false",
+        "AUTOPUBLISH_STORY_WITH_MUSIC": "true" if ap_story_music else "false",
+        "AUTOPUBLISH_STORY_REUSE_SCHEDULE": "true" if ap_story_reuse else "false",
+        "AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES": str(ap_story_reuse_interval),
+        "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
+        "AUTOPUBLISH_REEL_REUSE_SCHEDULE": "true" if ap_reel_reuse else "false",
+        "AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES": str(ap_reel_reuse_interval),
+        "AUTOPUBLISH_COMMENT_AUTOREPLY": "true" if ap_comment_autoreply else "false",
+    })
+    st.success("Configuração guardada no .env.")
+    st.rerun()
+
 # Botoes iniciar / parar
 col_btn1, col_btn2, _ = st.columns([1, 1, 2])
 with col_btn1:

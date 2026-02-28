@@ -18,14 +18,9 @@ def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
 socket.getaddrinfo = _ipv4_only_getaddrinfo
 
-# Carregar .env (tenta vários locais para compatibilidade)
+# Carregar .env (raiz do projeto)
 _env_root = Path(__file__).resolve().parent.parent
-for _env_path in (_env_root / ".env", _env_root / "instagramAutoPost" / ".env"):
-    if _env_path.exists():
-        load_dotenv(_env_path)
-        break
-else:
-    load_dotenv(_env_root / ".env")
+load_dotenv(_env_root / ".env")
 
 
 def _required(key: str) -> str:
