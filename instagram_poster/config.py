@@ -130,7 +130,7 @@ def get_ig_access_token() -> str:
             return str(tok["access_token"])
     except Exception:
         pass
-    return IG_ACCESS_TOKEN
+    return (os.getenv("IG_ACCESS_TOKEN") or IG_ACCESS_TOKEN or "").strip()
 
 
 # --- Geração de imagens (multi-provedor) ---

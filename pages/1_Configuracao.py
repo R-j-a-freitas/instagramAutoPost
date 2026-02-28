@@ -169,8 +169,34 @@ _oauth_token_exists = (_PROJECT_ROOT / "google_oauth_authorized.json").exists()
 
 if _oauth_client_exists and _oauth_token_exists:
     st.success("Google Sheets: autorizado (token guardado)")
+    _goog_token_path = _PROJECT_ROOT / "google_oauth_authorized.json"
+    if st.button("Desligar e renovar autorização", key="disconnect_google"):
+        if _goog_token_path.exists():
+            _goog_token_path.unlink()
+        st.rerun()
+    st.caption("Se aparecer «invalid_grant», clica acima para desligar e depois em «Verificar e aceitar» para reautorizar.")
 elif _oauth_client_exists:
-    st.info("JSON OAuth carregado. Clica **Verificar e aceitar** para autorizar no browser (abre uma vez).")
+    with st.expander("📋 Instruções: autorizar Google Sheets", expanded=True):
+        st.markdown("""
+1. **Preenche o ID do Sheet** no campo abaixo (ou cola a URL completa do Google Sheet).
+2. **Clica no botão** «Verificar e aceitar — Google Sheets».
+3. O **browser abre** — escolhe a conta Google e autoriza a app.
+4. Volta aqui — a autorização fica guardada.
+        """)
+    with st.container():
+        st.info("**Próximo passo:** Clica no botão abaixo para abrir o browser e autorizar a app no Google.")
+        if st.button("🔗 Verificar e aceitar — Google Sheets (abre o browser)", type="primary", key="verify_sheets_promo"):
+            _apply_config_from_session()
+            sheet_id = _extract_sheet_id(st.session_state.get("config_sheet_id", ""))
+            if sheet_id:
+                update_env_vars({"IG_SHEET_ID": sheet_id})
+            ok, msg = verify_google_sheets()
+            if ok:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+                st.caption("Se o browser não abriu, verifica se tens um bloqueador de pop-ups.")
 elif config.get_google_credentials_dict() is not None or config.get_google_credentials_path():
     st.info("Service Account configurada.")
 else:
@@ -199,7 +225,7 @@ if uploaded is not None:
             dest = _PROJECT_ROOT / "google_oauth_client.json"
             dest.write_text(json.dumps(data, indent=2), encoding="utf-8")
             update_env_from_oauth_client_json(data)
-            st.success("JSON OAuth carregado. Clica **Verificar e aceitar** abaixo — o browser abrirá para autorizares.")
+            st.success("✅ JSON OAuth guardado. A página vai recarregar — clica no botão «Verificar e aceitar» para abrir o browser.")
             st.rerun()
         elif is_service_account:
             secrets_dir = _PROJECT_ROOT / "secrets"
@@ -223,6 +249,7 @@ st.text_input(
     key="config_sheet_id",
     placeholder="URL ou ID (ex.: 1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig)",
 )
+st.caption("Preenche o ID do Sheet antes de clicar em Verificar e aceitar.")
 if st.button("Verificar e aceitar — Google Sheets", key="verify_sheets"):
     _apply_config_from_session()
     sheet_id = _extract_sheet_id(st.session_state.get("config_sheet_id", ""))
@@ -233,7 +260,9 @@ if st.button("Verificar e aceitar — Google Sheets", key="verify_sheets"):
         st.success(msg)
     else:
         st.error(msg)
-        if _oauth_client_exists and not _oauth_token_exists:
+        if "invalid_grant" in (msg or "").lower():
+            st.warning("Token expirado ou revogado. Clica em «Desligar e renovar autorização» acima e depois em «Verificar e aceitar» para reautorizar no browser.")
+        elif _oauth_client_exists and not _oauth_token_exists:
             st.info("Na primeira vez, o browser deve abrir para autorizares. Se não abriu, verifica a consola/terminal.")
 
 st.divider()
@@ -241,6 +270,45 @@ st.divider()
 # ========== 2. INSTAGRAM ==========
 st.subheader("2. Instagram Graph API")
 st.caption("Publicação no Instagram. Liga com a tua conta ou cola token manualmente.")
+
+with st.expander("📌 Como renovar o token (erro invalid_grant / token expirado)", expanded=False):
+    st.markdown("""
+**Erro «invalid_grant: Token has been expired or revoked»?**
+
+1. **Forma simples:** Clica no botão **«Ligar com Instagram»** (ou **«Renovar token»** se já estiveres ligado).
+2. Serás redirecionado para o Instagram — inicia sessão e autoriza a app.
+3. Volta à app — o novo token é guardado automaticamente.
+
+**Alternativa (token manual):** Gera um token no [Meta Developers](https://developers.facebook.com/) → tua app → Instagram → Generate access tokens. Cola o token no campo «Access Token» abaixo e clica em «Verificar e aceitar».
+    """)
+
+with st.expander("⚠️ Erro «Invalid platform app» ao clicar em Ligar/Renovar", expanded=True):
+    try:
+        from instagram_poster.oauth_instagram import get_redirect_uri
+        _redirect_uri = get_redirect_uri()
+    except Exception:
+        _redirect_uri = "http://localhost:8502/"
+    st.markdown(f"""
+**O que significa:** A app Meta/Instagram não reconhece a configuração. Corrige no [Meta for Developers](https://developers.facebook.com/):
+
+1. **Produto correcto:** A app deve ter **«Instagram API with Instagram Login»** (não só «Instagram Graph API»).  
+   → Apps → tua app → Adicionar produto → **Instagram** → escolhe «API with Instagram Login».
+
+2. **Redirect URI exacto:** Em **Instagram** → **Configuração da API** → **Valid OAuth Redirect URIs**, adiciona:
+   ```
+   {_redirect_uri}
+   ```
+   (Deve coincidir exactamente, incluindo a barra final `/`.)
+
+3. **Porta:** Se a app corre em **8502** (run.bat), define no `.env`:
+   ```
+   OAUTH_REDIRECT_BASE=http://localhost:8502
+   ```
+
+4. **App ID:** Usa o **Instagram App ID** da secção Instagram (não o App ID geral).
+
+5. **Testadores:** Em modo Development, adiciona a tua conta Instagram como **Instagram Tester** em Roles → Testers.
+    """)
 
 try:
     from instagram_poster.oauth_instagram import get_auth_url, has_oauth_token, clear_oauth_token
@@ -251,27 +319,47 @@ except Exception:
 col_ig1, col_ig2 = st.columns(2)
 with col_ig1:
     if ig_oauth_available:
+        auth_url = get_auth_url(state="instagram")
         if has_oauth_token():
             st.success("✅ Instagram ligado (OAuth)")
+            if auth_url:
+                st.link_button("🔗 Renovar token", auth_url, type="secondary", use_container_width=True)
+                st.caption("Clica para renovar o token (reautorizar no Instagram). Resolve o erro «invalid_grant».")
             if st.button("Desligar Instagram", key="disconnect_ig"):
                 clear_oauth_token()
                 st.rerun()
         else:
-            auth_url = get_auth_url(state="instagram")
             if auth_url:
                 st.link_button("🔗 Ligar com Instagram", auth_url, type="primary", use_container_width=True)
-                st.caption("Serás redirecionado para o Instagram para autorizar.")
+                st.caption("Serás redirecionado para o Instagram para autorizar. **Usa este botão para renovar o token** se aparecer «invalid_grant».")
     else:
         st.info("Para OAuth: adiciona INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET ao .env")
-        st.caption(f"[Criar app Instagram]({INSTAGRAM_DEV_DASHBOARD}) → Adicionar produto Instagram → Configurar OAuth redirect: http://localhost:8501/")
+        try:
+            from instagram_poster.oauth_instagram import get_redirect_uri as _get_ru
+            _ru = _get_ru()
+        except Exception:
+            _ru = "http://localhost:8502/"
+        st.caption(f"[Criar app Instagram]({INSTAGRAM_DEV_DASHBOARD}) → Adicionar produto «Instagram API with Instagram Login» → Valid OAuth Redirect URIs: {_ru}")
 
 with col_ig2:
     st.markdown("**Ou: credenciais manuais**")
+    with st.expander("📍 Onde ver o ID e o token?", expanded=True):
+        st.markdown("""
+**No [Meta for Developers](https://developers.facebook.com/):**
+
+1. **Instagram Business ID**  
+   Apps → tua app → **Instagram** → **Configuração da API** → secção «1. Generate access tokens».  
+   O ID aparece ao lado do nome da conta (ex.: `keepcalmnbepositive` → ID: `17841449097041089`).
+
+2. **Access Token**  
+   Na mesma secção, clica em **«Generate token»** ao lado da tua conta.  
+   Autoriza e copia o token que aparece. Cola no campo «Access Token» abaixo.
+        """)
     st.text_input(
         "Instagram Business ID",
         value=st.session_state.config_ig_business_id,
         key="config_ig_business_id",
-        placeholder="ID da conta de negócios",
+        placeholder="ID da conta de negócios (ex.: 17841449097041089)",
         label_visibility="collapsed",
     )
     st.text_input(
@@ -279,7 +367,7 @@ with col_ig2:
         value=st.session_state.config_ig_access_token,
         key="config_ig_access_token",
         type="password",
-        placeholder="Token de acesso (long-lived)",
+        placeholder="Token (Generate token no Meta Developers)",
         label_visibility="collapsed",
     )
 
@@ -293,9 +381,16 @@ with col_verify_ig:
             update_env_vars({"IG_BUSINESS_ID": ig_id})
         if ig_token:
             update_env_vars({"IG_ACCESS_TOKEN": ig_token})
+            try:
+                from instagram_poster.oauth_instagram import TOKEN_FILE
+                if TOKEN_FILE.exists():
+                    TOKEN_FILE.unlink()
+            except Exception:
+                pass
         ok, msg = verify_instagram()
         if ok:
             st.success(msg)
+            st.caption("Se usas Task Scheduler ou autopublish em background, reinicia a app para aplicar o novo token.")
         else:
             st.error(msg)
 with col_monitor_ig:
@@ -637,6 +732,7 @@ _ap_story_reuse_interval = get_autopublish_story_reuse_interval_minutes()
 _ap_reel = get_autopublish_reel_every_5()
 _ap_reel_reuse = get_autopublish_reel_reuse_schedule_enabled()
 _ap_reel_reuse_interval = get_autopublish_reel_reuse_interval_minutes()
+_ap_comment_autoreply = get_autopublish_comment_autoreply()
 
 # Toggle on/off
 ap_enabled = st.toggle(
@@ -724,7 +820,8 @@ ap_comment_autoreply = st.toggle(
 ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
 ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
 if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_music != _ap_story_music or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
-        or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval):
+        or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval
+        or ap_comment_autoreply != _ap_comment_autoreply):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),

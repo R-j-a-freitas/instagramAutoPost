@@ -23,4 +23,9 @@ instagramAutoPost/
 .autopublish_log.json
 .autopublish_stopped
 .comment_autoreply_replied.json
+.comment_autoreply_replied.json.bak
+.comment_autoreply_replied.json.lock
+.comment_autoreply_last_run.json
 .comment_autoreply_replied/
+assets/reels_used_rows.json
+assets/music/MUSIC/*.mp3

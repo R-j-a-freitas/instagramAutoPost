@@ -237,9 +237,10 @@ if ap_log:
     published_entries = [e for e in ap_log if e.get("type") == "publish"]
     reel_entries = [e for e in ap_log if e.get("type") == "reel"]
     story_entries = [e for e in ap_log if e.get("type") == "story"]
+    comment_entries = [e for e in ap_log if e.get("type") == "comment"]
     error_entries = [e for e in ap_log if e.get("type") == "error"]
     check_entries = [e for e in ap_log if e.get("type") == "check"]
-    other_entries = [e for e in ap_log if e.get("type") not in ("publish", "error", "check", "reel", "story")]
+    other_entries = [e for e in ap_log if e.get("type") not in ("publish", "error", "check", "reel", "story", "comment")]
 
     if check_entries:
         with st.expander(f"Verificações ({len(check_entries)})", expanded=True):
@@ -326,11 +327,41 @@ if ap_log:
         else:
             st.caption("Nenhuma Story registada.")
 
+    with st.expander(f"Comentarios respondidos ({len(comment_entries)})", expanded=bool(comment_entries)):
+        st.caption("Comentarios respondidos automaticamente com emoji de agradecimento (ex.: 🙏) em cada verificacao.")
+        if comment_entries:
+            for entry in reversed(comment_entries):
+                ts = entry["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                username = entry.get("comment_username", "?")
+                text_preview = entry.get("comment_text", "")
+                msg = entry.get("message", "")
+                cid = entry.get("comment_id", "")
+
+                col_c1, col_c2 = st.columns([3, 1])
+                with col_c1:
+                    st.markdown(f"**@{username}** «{text_preview}...»")
+                with col_c2:
+                    st.caption(f"Respondido: {ts}")
+                if cid:
+                    st.caption(f"Comment ID: `{cid}`")
+                st.divider()
+        else:
+            st.caption("Nenhum comentario respondido ainda.")
+
     with st.expander(f"Erros ({len(error_entries)})"):
         if st.button("Limpar erros", key="ap_clear_errors", disabled=not error_entries):
             autopublish.clear_error_entries()
             st.rerun()
         if error_entries:
+            has_token_error = any(
+                "invalid_grant" in (e.get("message") or "").lower()
+                or ("token" in (e.get("message") or "").lower() and "expired" in (e.get("message") or "").lower())
+                for e in error_entries
+            )
+            if has_token_error:
+                if st.button("🔗 Ir renovar token (Configuração)", type="primary", key="ap_go_renew_token"):
+                    st.switch_page("pages/1_Configuracao.py")
+                st.caption("Token expirado ou revogado. Clica acima para ir à Configuração e renovar.")
             has_moviepy_error = any(
                 "moviepy" in (e.get("message") or "").lower() for e in error_entries
             )

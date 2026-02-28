@@ -49,6 +49,13 @@ if st.button("Executar autoresposta agora", type="primary", key="run_autoreply")
     try:
         with st.spinner("A processar comentários..."):
             result = run_autoreply(message=msg or "🙏", max_media=max_media, delay_seconds=delay)
+        for item in result.get("replied_items", []):
+            from instagram_poster import autopublish
+            autopublish.log_comment_reply(
+                username=item.get("username", "?"),
+                text_preview=item.get("text_preview", ""),
+                comment_id=item.get("comment_id", ""),
+            )
         st.success(
             f"Concluído: {result['replied']} resposta(s) enviada(s), {result['skipped']} comentário(s) já respondido(s). "
             f"Verificados {result.get('media_count', 0)} post(s), {result.get('comments_total', 0)} comentário(s) no total."

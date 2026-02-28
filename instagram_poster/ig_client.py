@@ -27,6 +27,24 @@ def _check_config() -> None:
         raise ValueError("Defina IG_ACCESS_TOKEN no .env ou preenche na sidebar da app.")
 
 
+def get_my_id() -> str:
+    """
+    Obtém o scoped user ID do utilizador autenticado (para comparação com from.id nas replies).
+    GET /me?fields=id
+    O from.id nas replies pode ser IGSID, diferente do Business Account ID.
+    """
+    _check_config()
+    url = _url("/me")
+    params = {"fields": "id", "access_token": get_ig_access_token()}
+    resp = requests.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    user_id = data.get("id")
+    if not user_id:
+        raise ValueError("Resposta da API /me sem id")
+    return str(user_id)
+
+
 def create_media(image_url: str, caption: str) -> str:
     """
     Cria um content container para uma imagem (feed).
@@ -247,6 +265,25 @@ def get_media_ids(limit: int = 25) -> list[str]:
     return [x["id"] for x in items if x.get("id")]
 
 
+def get_comment_replies(comment_id: str) -> list[dict]:
+    """
+    Obtém as replies de um comentário específico (verificação final antes de responder).
+    GET /{comment-id}?fields=replies{from}
+    Usado para garantir que não respondemos duas vezes ao mesmo comentário.
+    """
+    _check_config()
+    url = _url(f"/{comment_id}")
+    params = {
+        "fields": "replies.limit(100){id,from}",
+        "access_token": get_ig_access_token(),
+    }
+    resp = requests.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    replies = data.get("replies") or {}
+    return replies.get("data") or []
+
+
 def get_comments(media_id: str) -> list[dict]:
     """
     Obtém os comentários de um media (apenas top-level).
@@ -255,7 +292,7 @@ def get_comments(media_id: str) -> list[dict]:
     _check_config()
     url = _url(f"/{media_id}/comments")
     params = {
-        "fields": "id,text,username,timestamp,replies{id,from}",
+        "fields": "id,text,username,timestamp,from,replies.limit(100){id,from}",
         "access_token": get_ig_access_token(),
     }
     resp = requests.get(url, params=params, timeout=30)

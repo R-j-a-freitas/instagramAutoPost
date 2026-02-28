@@ -143,6 +143,15 @@ def publish_post(post: dict[str, Any]) -> str:
             logger.info("Story publicada automaticamente (post linha %s)", row_index)
         except Exception as e:
             logger.warning("Falha ao publicar Story automatica (post linha %s): %s", row_index, e)
+            try:
+                autopublish._add_log_entry(
+                    False,
+                    f"Story com post falhou (linha {row_index}): {e}",
+                    entry_type="error",
+                    post_data=post,
+                )
+            except Exception:
+                pass
 
     return media_id
 

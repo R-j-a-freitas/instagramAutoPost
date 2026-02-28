@@ -31,7 +31,7 @@ echo [1/6] Python encontrado.
 
 REM 2. Criar ambiente virtual
 if not exist ".venv\Scripts\activate.bat" (
-    echo [2/6] A criar ambiente virtual (.venv)...
+    echo [2/6] A criar ambiente virtual .venv...
     %PY% -m venv .venv
 ) else (
     echo [2/6] Ambiente virtual ja existe.
@@ -48,8 +48,8 @@ REM 4. Criar pastas necessarias
 echo [4/6] A criar pastas...
 if not exist "assets\music\MUSIC" mkdir "assets\music\MUSIC"
 if not exist "tools\ffmpeg" mkdir "tools\ffmpeg"
-echo       assets\music\MUSIC (musica para Reels)
-echo       tools\ffmpeg (opcional: coloca ffmpeg.exe aqui)
+echo       assets\music\MUSIC - musica para Reels
+echo       tools\ffmpeg - opcional: coloca ffmpeg.exe aqui
 
 REM 5. Instalar Chromium para Playwright (Auto Click)
 echo [5/6] A instalar Chromium para Playwright...

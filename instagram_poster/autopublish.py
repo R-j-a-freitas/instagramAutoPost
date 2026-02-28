@@ -180,6 +180,7 @@ def get_stats() -> dict[str, Any]:
             "total_checks": sum(1 for e in _log if e.get("type") == "check"),
             "total_stories": sum(1 for e in _log if e.get("type") == "story"),
             "total_reels": sum(1 for e in _log if e.get("type") == "reel"),
+            "total_comments": sum(1 for e in _log if e.get("type") == "comment"),
             "effective_interval_minutes": _current_interval_minutes,
         }
 
@@ -202,6 +203,9 @@ def _add_log_entry(
     post_data: Optional[dict[str, Any]] = None,
     media_id: Optional[str] = None,
     story_source: Optional[str] = None,
+    comment_username: Optional[str] = None,
+    comment_text: Optional[str] = None,
+    comment_id: Optional[str] = None,
 ):
     global _total_published, _total_errors
     with _lock:
@@ -214,6 +218,12 @@ def _add_log_entry(
         }
         if story_source is not None:
             entry["story_source"] = story_source
+        if comment_username is not None:
+            entry["comment_username"] = comment_username
+        if comment_text is not None:
+            entry["comment_text"] = comment_text
+        if comment_id is not None:
+            entry["comment_id"] = comment_id
         if post_data:
             entry["row"] = post_data.get("row_index")
             entry["date"] = post_data.get("date", "")
@@ -230,6 +240,22 @@ def _add_log_entry(
         _save_log_to_file()
     except Exception:
         pass
+
+
+def log_comment_reply(
+    username: str,
+    text_preview: str,
+    comment_id: str,
+) -> None:
+    """Regista uma resposta a comentário no histórico."""
+    _add_log_entry(
+        True,
+        f"Respondido: @{username} «{text_preview}...»",
+        entry_type="comment",
+        comment_username=username,
+        comment_text=text_preview,
+        comment_id=comment_id,
+    )
 
 
 def log_story_published(
@@ -492,7 +518,7 @@ def try_publish_story_reuse_scheduled() -> bool:
     with _lock:
         last = _last_story_reuse_at
     if last is None:
-        return False  # sem baseline — não publicar até haver uma Story anterior
+        last = now - timedelta(hours=25)
     if (now - last).total_seconds() < interval_minutes * 60:
         return False
 
@@ -573,6 +599,12 @@ def _loop(interval_minutes: int):
             if get_autopublish_comment_autoreply():
                 from instagram_poster.comment_autoreply import run_autoreply
                 result = run_autoreply(message="🙏", max_media=5, delay_seconds=1.0)
+                for item in result.get("replied_items", []):
+                    log_comment_reply(
+                        username=item.get("username", "?"),
+                        text_preview=item.get("text_preview", ""),
+                        comment_id=item.get("comment_id", ""),
+                    )
                 if result.get("replied", 0) > 0:
                     logger.info("Autopublish: autoresposta a %d comentário(s)", result["replied"])
         except Exception:
