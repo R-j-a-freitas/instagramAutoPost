@@ -26,6 +26,13 @@
     th { color: #e1306c; font-weight: 600; }
     .tag { display: inline-block; background: #e1306c; color: #fff; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; margin: 0.25rem 0.25rem 0 0; }
     .flow { font-family: monospace; font-size: 1rem; color: #8a8; padding: 1rem; background: #1a1a1a; border-radius: 8px; margin: 1rem 0; }
+    .slide-img { max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid #333; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    .img-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin: 1.5rem 0; max-width: 900px; }
+    .img-grid-3 { grid-template-columns: repeat(3, 1fr); max-width: 1000px; }
+    .img-grid-3 .img-cell img { max-height: 180px; }
+    .img-grid .img-caption { font-size: 0.9rem; color: #888; margin-top: 0.5rem; }
+    .img-cell { display: flex; flex-direction: column; align-items: flex-start; }
+    .img-cell img { max-height: 220px; width: auto; object-fit: contain; }
     .nav { position: fixed; bottom: 2rem; right: 2rem; display: flex; gap: 1rem; }
     .nav button { padding: 0.75rem 1.5rem; font-size: 1rem; cursor: pointer; background: #e1306c; color: #fff; border: none; border-radius: 8px; }
     .nav button:hover { background: #c13584; }
@@ -61,6 +68,60 @@
   </div>
 
   <div class="slide" data-n="4">
+    <h1>Interface da aplicação</h1>
+    <p>Painéis principais da plataforma:</p>
+    <div class="img-grid">
+      <div class="img-cell">
+        <img src="images/painel_home.png" alt="Página inicial" class="slide-img">
+        <span class="img-caption">Página inicial — Acesso rápido e Como usar</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_posts.png" alt="Gestão de Posts" class="slide-img">
+        <span class="img-caption">Gestão de Posts — Calendário e publicação</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_conteudo.png" alt="Criar Conteúdo" class="slide-img">
+        <span class="img-caption">Criar Conteúdo — IA (Gemini)</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_autopublish_dashboard.png" alt="Autopublish" class="slide-img">
+        <span class="img-caption">Autopublish — Histórico e métricas</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-n="5">
+    <h1>Mais painéis</h1>
+    <p>Reels, Stories, YouTube Áudio, Comentários e Auto Click:</p>
+    <div class="img-grid img-grid-3">
+      <div class="img-cell">
+        <img src="images/painel_reels.png" alt="Reels" class="slide-img">
+        <span class="img-caption">Reels — Slideshow com música</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_stories.png" alt="Stories" class="slide-img">
+        <span class="img-caption">Stories — Publicação manual</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_youtube_audio.png" alt="YouTube Áudio" class="slide-img">
+        <span class="img-caption">YouTube Áudio — MP3 para Reels</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_comentarios.png" alt="Comentários" class="slide-img">
+        <span class="img-caption">Comentários — Autoresposta</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_autoclick.png" alt="Auto Click" class="slide-img">
+        <span class="img-caption">Auto Click — Automação de cliques</span>
+      </div>
+      <div class="img-cell">
+        <img src="images/painel_autopublish_config.png" alt="Config. Autopublish" class="slide-img">
+        <span class="img-caption">Autopublish — Configuração</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-n="6">
     <h1>Principais funcionalidades</h1>
     <table>
       <tr><th>Módulo</th><th>Descrição</th></tr>
@@ -72,20 +133,20 @@
     </table>
   </div>
 
-  <div class="slide" data-n="5">
+  <div class="slide" data-n="7">
     <h1>Fluxo de trabalho</h1>
     <div class="flow">Google Sheet (calendário) → App verifica → Publica no Instagram<br>
     Data, Hora, Texto, Imagem → Post pronto? → Feed, Story, Reel</div>
     <p><strong>Uma única fonte de verdade</strong> — O Google Sheet é o calendário. A equipa edita; a app publica.</p>
   </div>
 
-  <div class="slide" data-n="6">
+  <div class="slide" data-n="8">
     <h1>Integrações</h1>
     <p><span class="tag">Instagram Graph API</span> <span class="tag">Google Sheets</span> <span class="tag">Google Gemini</span> <span class="tag">Cloudinary</span> <span class="tag">Task Scheduler</span></p>
     <p style="margin-top: 2rem;">Publicação 24/7 sem browser aberto. Instalação em minutos.</p>
   </div>
 
-  <div class="slide" data-n="7">
+  <div class="slide" data-n="9">
     <h1>Casos de uso</h1>
     <ul>
       <li><strong>Agências</strong> — Gerir múltiplas contas de clientes</li>
@@ -95,7 +156,7 @@
     </ul>
   </div>
 
-  <div class="slide" data-n="8">
+  <div class="slide" data-n="10">
     <h1>Vantagens competitivas</h1>
     <ul>
       <li>✅ API oficial — Sem risco de bloqueio</li>
@@ -106,7 +167,7 @@
     </ul>
   </div>
 
-  <div class="slide" data-n="9">
+  <div class="slide" data-n="11">
     <h1>Modelo de negócio sugerido</h1>
     <table>
       <tr><th>Opção</th><th>Descrição</th></tr>
@@ -117,7 +178,38 @@
     </table>
   </div>
 
-  <div class="slide" data-n="10">
+  <div class="slide" data-n="12">
+    <h1>Executáveis disponíveis</h1>
+    <p>Instalação e execução em <strong>Windows</strong> e <strong>Linux</strong>:</p>
+    <table>
+      <tr><th>Windows</th><th>Linux</th><th>Função</th></tr>
+      <tr><td>install.bat</td><td>install.sh</td><td>Instalação automática</td></tr>
+      <tr><td>run.bat</td><td>run.sh</td><td>Iniciar a app (porta 8502)</td></tr>
+      <tr><td>run_autopublish.bat</td><td>run_autopublish.sh</td><td>Autopublish em background (Task Scheduler / cron)</td></tr>
+      <tr><td>run_update_prompts.bat</td><td>—</td><td>Atualizar prompts Gemini no Sheet</td></tr>
+    </table>
+    <p style="margin-top: 1rem;">Manuais: <code>INSTALL_WINDOWS.md</code>, <code>INSTALL_LINUX.md</code>, <code>docs/MANUAL_UTILIZADOR.md</code></p>
+  </div>
+
+  <div class="slide" data-n="13">
+    <h1>Instalação rápida</h1>
+    <p><strong>Windows:</strong> Duplo clique em <code>install.bat</code> → depois <code>run.bat</code></p>
+    <p><strong>Linux:</strong></p>
+    <div class="flow">chmod +x install.sh run.sh run_autopublish.sh<br>./install.sh<br>./run.sh</div>
+    <p>A app abre em <strong>http://localhost:8502</strong>. Configura o <code>.env</code> e liga Google + Instagram na secção Configuração.</p>
+  </div>
+
+  <div class="slide" data-n="14">
+    <h1>Publicação no servidor</h1>
+    <ul>
+      <li><strong>Apresentação HTML</strong> — Serve <code>docs/apresentacao.html</code> via nginx ou outro servidor web</li>
+      <li><strong>App Streamlit</strong> — Instala no servidor com <code>install.sh</code>, corre com <code>run.sh</code> ou como serviço systemd</li>
+      <li><strong>Media</strong> — Pasta partilhada (Samba) + nginx para servir ficheiros (ver <code>docs/SAMBA_E_TESTES.md</code>)</li>
+      <li><strong>Autopublish 24/7</strong> — Cron (Linux) ou Task Scheduler (Windows) com <code>run_autopublish.sh</code> / <code>run_autopublish.bat</code></li>
+    </ul>
+  </div>
+
+  <div class="slide" data-n="15">
     <h1>Próximos passos</h1>
     <ol style="margin: 1.5rem 0; padding-left: 1.5rem; font-size: 1.2rem; line-height: 2.5;">
       <li><strong>Demo</strong> — Demonstração ao vivo</li>
@@ -128,7 +220,7 @@
     <p style="margin-top: 2rem; color: #e1306c; font-size: 1.3rem;">Instagram Auto Post — Automação inteligente para o teu Instagram</p>
   </div>
 
-  <div class="counter"><span id="current">1</span> / <span id="total">10</span></div>
+  <div class="counter"><span id="current">1</span> / <span id="total">15</span></div>
   <div class="nav">
     <button id="prev">← Anterior</button>
     <button id="next">Seguinte →</button>

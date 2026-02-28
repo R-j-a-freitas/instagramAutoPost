@@ -14,7 +14,7 @@ from instagram_poster.reel_generator import (
     mark_posts_used_in_reel,
     upload_video_bytes,
 )
-from instagram_poster import ig_client
+from instagram_poster import autopublish, ig_client
 
 st.set_page_config(page_title="Reels | Instagram Auto Post", page_icon="🎬", layout="wide")
 
@@ -188,6 +188,7 @@ if st.session_state.reel_video_bytes:
                 creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
                 media_id = ig_client.publish_media(creation_id, max_wait=180)
                 mark_posts_used_in_reel(st.session_state.get("reel_posts_for_video", []))
+                autopublish.log_reel_manual(caption, media_id)
                 st.success(f"Reel publicado. Media ID: {media_id}")
                 st.session_state.reel_video_bytes = None
                 st.session_state.reel_posts_for_video = []

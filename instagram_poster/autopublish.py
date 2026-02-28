@@ -193,6 +193,19 @@ def clear_error_entries() -> int:
     return removed
 
 
+def ensure_log_loaded_for_cli() -> None:
+    """
+    Carrega o log do ficheiro se _log estiver vazio.
+    Obrigatório chamar no CLI antes de run_once() para não sobrescrever entradas existentes
+    (posts, reels, stories) com um log vazio.
+    """
+    with _lock:
+        if _log:
+            return
+    if _LOG_FILE.exists():
+        _load_log_from_file()
+
+
 def get_log() -> list[dict[str, Any]]:
     need_load = False
     with _lock:
@@ -297,6 +310,16 @@ def log_comment_reply(
         comment_text=text_preview,
         comment_id=comment_id,
     )
+
+
+def log_reel_manual(caption: str, media_id: str) -> None:
+    """Regista um Reel publicado manualmente (página Reels) no histórico."""
+    global _last_reel_at
+    with _lock:
+        _last_reel_at = datetime.now()
+    cap = (caption or "").strip() or "Reel gerado automaticamente"
+    msg = f"Reel publicado (manual): \"{cap[:50]}...\"" if len(cap) > 50 else f"Reel publicado (manual): \"{cap}\""
+    _add_log_entry(True, msg, entry_type="reel", media_id=media_id)
 
 
 def log_story_published(

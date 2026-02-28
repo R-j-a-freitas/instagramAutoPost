@@ -21,7 +21,7 @@ if _env_path.exists():
     load_dotenv(_env_path, override=True)
 
 from instagram_poster import config  # noqa: F401 — carrega .env e patch IPv4
-from instagram_poster.autopublish import run_once
+from instagram_poster.autopublish import ensure_log_loaded_for_cli, run_once, try_publish_auto_reel, try_publish_reel_reuse_scheduled, try_publish_story_reuse_scheduled
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +31,9 @@ logger = logging.getLogger("autopublish_cli")
 
 
 def main():
+    # Carregar log existente para não sobrescrever (Reels, Stories, etc.) ao gravar
+    ensure_log_loaded_for_cli()
+
     logger.info("Autopublish CLI: a verificar posts prontos...")
     try:
         result = run_once()
@@ -44,6 +47,24 @@ def main():
     except Exception:
         logger.exception("Autopublish CLI: erro inesperado")
         sys.exit(1)
+
+    # Reels automáticos (igual ao thread do Streamlit)
+    try:
+        if config.get_autopublish_reel_every_5():
+            if try_publish_auto_reel():
+                logger.info("Autopublish CLI: Reel publicado (5 posts).")
+    except Exception:
+        logger.exception("Autopublish CLI: erro no Reel automático")
+    try:
+        if try_publish_reel_reuse_scheduled():
+            logger.info("Autopublish CLI: Reel reuse agendado publicado.")
+    except Exception:
+        logger.exception("Autopublish CLI: erro no Reel reuse")
+    try:
+        if try_publish_story_reuse_scheduled():
+            logger.info("Autopublish CLI: Story reuse agendada publicada.")
+    except Exception:
+        logger.exception("Autopublish CLI: erro na Story reuse")
 
     try:
         if config.get_autopublish_comment_autoreply():

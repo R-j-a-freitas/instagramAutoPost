@@ -59,6 +59,15 @@ A app abre em **http://localhost:8502**
 | `tools/ffmpeg/` | Opcional: coloca ffmpeg.exe para YouTube Áudio |
 | `.env` | Configuração (criado a partir de .env.example) |
 
+## Autopublish em background (Task Scheduler)
+
+Para publicar automaticamente sem manter a app aberta:
+
+1. Abre **Agendador de Tarefas**
+2. Cria uma nova tarefa
+3. **Ação:** Iniciar programa → `run_autopublish.bat` (caminho completo)
+4. **Gatilho:** Repetir a cada X minutos (ex.: 15)
+
 ## Resolução de problemas
 
 ### "Python não encontrado"

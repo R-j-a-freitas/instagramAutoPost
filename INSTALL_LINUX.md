@@ -9,7 +9,7 @@
 
 ```bash
 cd instagramAutoPost
-chmod +x install.sh run.sh
+chmod +x install.sh run.sh run_autopublish.sh
 ./install.sh
 ```
 
@@ -43,6 +43,17 @@ cp .env.example .env
 ```bash
 ./run.sh
 ```
+
+## Autopublish em background (cron)
+
+Para publicar automaticamente sem manter a app aberta:
+
+```bash
+# Executar a cada 15 minutos
+*/15 * * * * /caminho/completo/para/instagramAutoPost/run_autopublish.sh
+```
+
+Usa `run_autopublish.sh` no crontab (ou equivalente).
 
 Ou:
 
