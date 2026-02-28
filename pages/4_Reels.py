@@ -12,7 +12,7 @@ from instagram_poster.reel_generator import (
     get_available_music_tracks,
     get_posts_for_reel,
     mark_posts_used_in_reel,
-    upload_video_to_cloudinary,
+    upload_video_bytes,
 )
 from instagram_poster import ig_client
 
@@ -184,7 +184,7 @@ if st.session_state.reel_video_bytes:
         caption = (st.session_state.get("reel_caption_ta") or st.session_state.get("reel_caption") or "").strip() or "Reel gerado automaticamente."
         with st.spinner("Upload para Cloudinary e publicação no Instagram (pode demorar 1-3 min)..."):
             try:
-                video_url = upload_video_to_cloudinary(st.session_state.reel_video_bytes)
+                video_url = upload_video_bytes(st.session_state.reel_video_bytes)
                 creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
                 media_id = ig_client.publish_media(creation_id, max_wait=180)
                 mark_posts_used_in_reel(st.session_state.get("reel_posts_for_video", []))

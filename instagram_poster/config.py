@@ -293,6 +293,36 @@ def get_cloudinary_url() -> str:
     """CLOUDINARY_URL (env ou override da UI). Formato: cloudinary://API_KEY:API_SECRET@CLOUD_NAME."""
     return get_runtime_override("CLOUDINARY_URL") or CLOUDINARY_URL
 
+
+# --- Backend de media (cloudinary ou local_http) ---
+# MEDIA_BACKEND: "cloudinary" (default) ou "local_http"
+# MEDIA_ROOT: directorio local onde as imagens/videos sao gravados quando MEDIA_BACKEND="local_http"
+# MEDIA_BASE_URL: URL publico servido por nginx (ex.: https://magnific1.ddns.net)
+MEDIA_BACKEND: str = _optional("MEDIA_BACKEND", "cloudinary")
+MEDIA_ROOT: str = _optional("MEDIA_ROOT", "/srv/instagram_media")
+MEDIA_BASE_URL: str = _optional("MEDIA_BASE_URL", "https://magnific1.ddns.net")
+
+
+def get_media_backend() -> str:
+    """Retorna 'cloudinary' ou 'local_http'. Valores invalidos -> fallback 'cloudinary'."""
+    val = (get_runtime_override("MEDIA_BACKEND") or os.getenv("MEDIA_BACKEND") or MEDIA_BACKEND).strip().lower()
+    return "local_http" if val == "local_http" else "cloudinary"
+
+
+def get_media_root() -> Path:
+    """Path do directorio de media. Cria o directorio se nao existir (mkdir parents=True, exist_ok=True)."""
+    raw = get_runtime_override("MEDIA_ROOT") or os.getenv("MEDIA_ROOT") or MEDIA_ROOT
+    path = Path(raw.strip()) if raw else Path("/srv/instagram_media")
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_media_base_url() -> str:
+    """URL base publica sem barra final."""
+    raw = get_runtime_override("MEDIA_BASE_URL") or os.getenv("MEDIA_BASE_URL") or MEDIA_BASE_URL
+    return (raw or "").strip().rstrip("/") or "https://magnific1.ddns.net"
+
+
 # --- Autopublish ---
 AUTOPUBLISH_ENABLED: str = _optional("AUTOPUBLISH_ENABLED", "false")
 AUTOPUBLISH_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_INTERVAL_MINUTES", "5")

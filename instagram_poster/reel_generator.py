@@ -1,11 +1,13 @@
 """
 Geração de Reels a partir dos últimos N posts publicados.
-Cria vídeo slideshow 1080x1920 (9:16), opcionalmente com áudio, e upload para Cloudinary.
+Cria vídeo slideshow 1080x1920 (9:16), opcionalmente com áudio, e upload para Cloudinary ou local.
 """
 import io
 import json
 import logging
 import tempfile
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,6 +19,9 @@ from instagram_poster.config import (
     CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME,
     get_cloudinary_url,
+    get_media_backend,
+    get_media_base_url,
+    get_media_root,
     get_pollinations_api_key,
 )
 
@@ -278,7 +283,32 @@ def create_reel_video(
         Path(tmp_path).unlink(missing_ok=True)
 
 
-def upload_video_to_cloudinary(video_bytes: bytes, public_id_prefix: str = "ig_reel") -> str:
+def upload_video_bytes(video_bytes: bytes, public_id_prefix: str = "ig_reel") -> str:
+    """
+    Se MEDIA_BACKEND=="cloudinary": usa Cloudinary como hoje.
+    Se MEDIA_BACKEND=="local_http": grava em MEDIA_ROOT e devolve MEDIA_BASE_URL/<filename>.mp4
+    """
+    if get_media_backend() == "local_http":
+        return _upload_video_to_local(video_bytes, public_id_prefix)
+    return _upload_video_to_cloudinary(video_bytes, public_id_prefix)
+
+
+def _upload_video_to_local(video_bytes: bytes, public_id_prefix: str) -> str:
+    """Grava vídeo em MEDIA_ROOT e devolve URL público."""
+    filename = f"{public_id_prefix}_{int(time.time())}_{uuid.uuid4().hex[:8]}.mp4"
+    try:
+        path = get_media_root() / filename
+        path.write_bytes(video_bytes)
+    except OSError as e:
+        raise ValueError(
+            f"MEDIA_ROOT não gravável: {get_media_root()}. Verifica permissões. Erro: {e}"
+        ) from e
+    url = f"{get_media_base_url()}/{filename}"
+    logger.info("Vídeo gravado localmente: %s", url[:80])
+    return url
+
+
+def _upload_video_to_cloudinary(video_bytes: bytes, public_id_prefix: str = "ig_reel") -> str:
     """Faz upload do vídeo para Cloudinary (resource_type=video) e devolve o secure_url."""
     try:
         import cloudinary
@@ -301,7 +331,6 @@ def upload_video_to_cloudinary(video_bytes: bytes, public_id_prefix: str = "ig_r
             "Configura o Cloudinary no .env para upload de vídeo."
         )
 
-    import time
     public_id = f"{public_id_prefix}_{int(time.time())}"
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         tmp.write(video_bytes)

@@ -9,6 +9,7 @@ from pathlib import Path
 import streamlit as st
 
 from instagram_poster import config
+from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.env_utils import (
     update_env_from_oauth_client_json,
     update_env_from_service_account_json,
@@ -18,6 +19,7 @@ from instagram_poster.providers import AVAILABLE_PROVIDERS
 from instagram_poster.sheets_client import get_all_rows_with_image_text, update_gemini_prompt
 from instagram_poster.verification import (
     check_instagram_api_status,
+    verify_all_connections,
     verify_cloudinary,
     verify_image_provider,
     verify_google_sheets,
@@ -62,6 +64,13 @@ def _init_config_session():
         st.session_state.config_content_system_override = override_content if override_content else ""
     if "config_cloudinary_url" not in st.session_state:
         st.session_state.config_cloudinary_url = config.get_cloudinary_url() or ""
+    if "config_media_backend" not in st.session_state:
+        st.session_state.config_media_backend = get_media_backend()
+    if "config_media_root" not in st.session_state:
+        raw = config.get_runtime_override("MEDIA_ROOT") or os.getenv("MEDIA_ROOT") or config.MEDIA_ROOT
+        st.session_state.config_media_root = (raw or "/srv/instagram_media").strip()
+    if "config_media_base_url" not in st.session_state:
+        st.session_state.config_media_base_url = get_media_base_url()
 
 
 def _extract_sheet_id(value: str) -> str:
@@ -89,6 +98,9 @@ def _apply_config_from_session():
     config.set_runtime_override("IMAGE_PROVIDER", st.session_state.get("config_image_provider", "gemini"))
     config.set_runtime_override("CONTENT_GENERATION_EXTRA_PROMPT", st.session_state.get("config_content_extra_prompt", ""))
     config.set_runtime_override("CLOUDINARY_URL", st.session_state.get("config_cloudinary_url", ""))
+    config.set_runtime_override("MEDIA_BACKEND", st.session_state.get("config_media_backend", "cloudinary"))
+    config.set_runtime_override("MEDIA_ROOT", st.session_state.get("config_media_root", "/srv/instagram_media"))
+    config.set_runtime_override("MEDIA_BASE_URL", st.session_state.get("config_media_base_url", "https://magnific1.ddns.net"))
 
 
 st.set_page_config(page_title="Configuração | Instagram Auto Post", page_icon="⚙️", layout="wide")
@@ -152,12 +164,32 @@ with st.container():
             else:
                 st.error(f"Imagens\n\n{_prov_label}\nAPI key em falta")
     with c4:
-        _cn = config.CLOUDINARY_CLOUD_NAME
-        _cu = config.get_cloudinary_url()
-        if (_cu and _cu.strip().startswith("cloudinary://")) or _cn:
-            st.success(f"Cloudinary\n\n`{_cn or 'via URL'}`")
+        if get_media_backend() == "local_http":
+            st.success(f"Media\n\nlocal HTTP\n`{get_media_base_url()}`")
         else:
-            st.error("Cloudinary\n\nnão configurado")
+            _cn = config.CLOUDINARY_CLOUD_NAME
+            _cu = config.get_cloudinary_url()
+            if (_cu and _cu.strip().startswith("cloudinary://")) or _cn:
+                st.success(f"Cloudinary\n\n`{_cn or 'via URL'}`")
+            else:
+                st.error("Cloudinary\n\nnão configurado")
+
+    # Botão para verificar todas as ligações
+    if st.button("🔍 Verificar todas as ligações", type="primary", key="verify_all_cfg"):
+        _apply_config_from_session()
+        with st.spinner("A verificar ligações..."):
+            results = verify_all_connections()
+        all_ok = all(ok for _, ok, _ in results)
+        if all_ok:
+            st.success("Todas as ligações OK.")
+        else:
+            st.warning("Algumas ligações falharam. Ver detalhes abaixo.")
+        with st.expander("Resultado da verificação", expanded=not all_ok):
+            for name, ok, msg in results:
+                if ok:
+                    st.success(f"**{name}:** {msg}")
+                else:
+                    st.error(f"**{name}:** {msg}")
     st.divider()
 
 # ========== 1. GOOGLE SHEETS ==========
@@ -586,44 +618,96 @@ if st.button("Gerar imagem de teste", key="generate_test_image"):
 
 st.divider()
 
-# ========== 4. CLOUDINARY ==========
-st.subheader("4. Cloudinary")
-st.caption("Upload de imagens geradas. Configura no .env (CLOUDINARY_URL) ou introduz directamente abaixo.")
-st.link_button("☁️ Dashboard Cloudinary", CLOUDINARY_DASHBOARD, use_container_width=True)
-
-def _normalize_cloudinary_url(value: str) -> str:
-    """Aceita CLOUDINARY_URL=cloudinary://... ou só cloudinary://..."""
-    if not value or not value.strip():
-        return ""
-    v = value.strip()
-    if "=" in v and v.startswith("CLOUDINARY_URL"):
-        v = v.split("=", 1)[1].strip().strip('"').strip("'")
-    return v
-
-st.text_input(
-    "CLOUDINARY_URL (introdução directa)",
-    value=st.session_state.config_cloudinary_url,
-    key="config_cloudinary_url",
-    type="password",
-    placeholder="CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME",
-    help="Cola a variável de ambiente completa (ex.: CLOUDINARY_URL=cloudinary://233159192196183:xxx@dvnpqhz9h) ou só o valor cloudinary://...",
+# ========== 4. BACKEND DE MEDIA ==========
+st.subheader("4. Backend de media")
+st.caption(
+    "Escolhe onde guardar imagens e vídeos: Cloudinary (nuvem) ou servidor local (nginx). "
+    "Com local_http, os ficheiros são gravados em disco e servidos via URL público. "
+    "Ver INSTAGRAM_HTTP_MEDIA_SETUP.md para configuração nginx."
 )
-if st.button("Verificar — Cloudinary", key="verify_cloudinary"):
+col_media1, col_media2 = st.columns(2)
+with col_media1:
+    media_backend = st.selectbox(
+        "Backend de media",
+        options=["cloudinary", "local_http"],
+        index=0 if (st.session_state.get("config_media_backend", "cloudinary") == "cloudinary") else 1,
+        format_func=lambda x: "Cloudinary (nuvem)" if x == "cloudinary" else "Local HTTP (servidor próprio)",
+        key="config_media_backend",
+    )
+with col_media2:
+    if media_backend == "local_http":
+        st.text_input(
+            "MEDIA_ROOT (directório local)",
+            value=st.session_state.get("config_media_root", "/srv/instagram_media"),
+            key="config_media_root",
+            placeholder="/srv/instagram_media",
+            help="Path onde as imagens/vídeos são gravados. Windows: ex. C:\\caminho\\instagram_media",
+        )
+        st.text_input(
+            "MEDIA_BASE_URL (URL público)",
+            value=st.session_state.get("config_media_base_url", "https://magnific1.ddns.net"),
+            key="config_media_base_url",
+            placeholder="https://magnific1.ddns.net",
+            help="URL base servida pelo nginx. Deve ser DNS público (nunca localhost).",
+        )
+if st.button("Guardar — Backend de media", key="save_media_backend"):
     _apply_config_from_session()
-    url_val = _normalize_cloudinary_url(st.session_state.get("config_cloudinary_url", ""))
-    if url_val:
-        config.set_runtime_override("CLOUDINARY_URL", url_val)
-        update_env_vars({"CLOUDINARY_URL": url_val})
-    ok, msg = verify_cloudinary()
-    if ok:
-        st.success(msg)
-    else:
-        st.error(msg)
+    backend_val = st.session_state.get("config_media_backend", "cloudinary")
+    root_val = (st.session_state.get("config_media_root") or "/srv/instagram_media").strip()
+    url_val = (st.session_state.get("config_media_base_url") or "https://magnific1.ddns.net").strip().rstrip("/")
+    update_env_vars({
+        "MEDIA_BACKEND": backend_val,
+        "MEDIA_ROOT": root_val,
+        "MEDIA_BASE_URL": url_val,
+    })
+    config.set_runtime_override("MEDIA_BACKEND", backend_val)
+    config.set_runtime_override("MEDIA_ROOT", root_val)
+    config.set_runtime_override("MEDIA_BASE_URL", url_val)
+    st.success("Backend de media guardado.")
 
 st.divider()
 
-# ========== 5. GERAÇÃO DE CONTEÚDO ==========
-st.subheader("5. Geração de conteúdo")
+# ========== 5. CLOUDINARY ==========
+st.subheader("5. Cloudinary")
+if media_backend == "local_http":
+    st.info("Media: backend local (Cloudinary não necessário). Os campos abaixo aplicam-se apenas quando MEDIA_BACKEND=cloudinary.")
+else:
+    st.caption("Upload de imagens geradas. Apenas quando MEDIA_BACKEND=cloudinary. Com local_http, o Cloudinary não é usado.")
+    st.link_button("☁️ Dashboard Cloudinary", CLOUDINARY_DASHBOARD, use_container_width=True)
+
+    def _normalize_cloudinary_url(value: str) -> str:
+        """Aceita CLOUDINARY_URL=cloudinary://... ou só cloudinary://..."""
+        if not value or not value.strip():
+            return ""
+        v = value.strip()
+        if "=" in v and v.startswith("CLOUDINARY_URL"):
+            v = v.split("=", 1)[1].strip().strip('"').strip("'")
+        return v
+
+    st.text_input(
+        "CLOUDINARY_URL (introdução directa)",
+        value=st.session_state.config_cloudinary_url,
+        key="config_cloudinary_url",
+        type="password",
+        placeholder="CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME",
+        help="Cola a variável de ambiente completa (ex.: CLOUDINARY_URL=cloudinary://233159192196183:xxx@dvnpqhz9h) ou só o valor cloudinary://...",
+    )
+    if st.button("Verificar — Cloudinary", key="verify_cloudinary"):
+        _apply_config_from_session()
+        url_val = _normalize_cloudinary_url(st.session_state.get("config_cloudinary_url", ""))
+        if url_val:
+            config.set_runtime_override("CLOUDINARY_URL", url_val)
+            update_env_vars({"CLOUDINARY_URL": url_val})
+        ok, msg = verify_cloudinary()
+        if ok:
+            st.success(msg)
+        else:
+            st.error(msg)
+
+st.divider()
+
+# ========== 6. GERAÇÃO DE CONTEÚDO ==========
+st.subheader("6. Geração de conteúdo")
 st.caption("Personaliza o prompt usado na página Conteúdo para variar temas ao longo do tempo ou consoante o que está em moda.")
 content_extra = st.text_area(
     "Instruções adicionais / Foco actual",
@@ -669,8 +753,8 @@ if st.button("Guardar — Geração de conteúdo", key="save_content_generation"
 
 st.divider()
 
-# ========== 6. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
-st.subheader("6. Preencher Gemini_Prompt no Sheet")
+# ========== 7. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
+st.subheader("7. Preencher Gemini_Prompt no Sheet")
 st.caption(
     "Gera descrições visuais (sem texto) a partir da Image Text de cada linha, "
     "usando IA para converter a quote numa cena. A quote é sobreposta na imagem ao publicar."
@@ -704,8 +788,8 @@ if st.button("Preencher Gemini_Prompt no Sheet"):
 
 st.divider()
 
-# ========== 7. AUTOPUBLISH ==========
-st.subheader("7. Publicacao automatica")
+# ========== 8. AUTOPUBLISH ==========
+st.subheader("8. Publicacao automatica")
 st.caption("Publica posts automaticamente na hora agendada no Sheet. Funciona com a app aberta ou via Task Scheduler.")
 
 from instagram_poster import autopublish

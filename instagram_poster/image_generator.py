@@ -12,6 +12,8 @@ import logging
 import re
 import tempfile
 import textwrap
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +26,9 @@ from instagram_poster.config import (
     CLOUDINARY_CLOUD_NAME,
     get_cloudinary_url,
     get_image_provider,
+    get_media_backend,
+    get_media_base_url,
+    get_media_root,
     get_pollinations_api_key,
 )
 from instagram_poster.providers import get_provider
@@ -222,7 +227,34 @@ def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
     return buf.getvalue()
 
 
-def upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_post") -> str:
+def upload_image_bytes(image_bytes: bytes, public_id_prefix: str = "ig_post") -> str:
+    """
+    Decide o backend com base em get_media_backend():
+    - cloudinary: upload para Cloudinary (comportamento actual)
+    - local_http: grava em MEDIA_ROOT e devolve MEDIA_BASE_URL/<filename>
+    """
+    if get_media_backend() == "local_http":
+        return _upload_image_to_local(image_bytes, public_id_prefix)
+    return _upload_image_to_cloudinary(image_bytes, public_id_prefix)
+
+
+def _upload_image_to_local(image_bytes: bytes, public_id_prefix: str) -> str:
+    """Grava imagem em MEDIA_ROOT e devolve URL público."""
+    ext = ".jpg" if public_id_prefix == "ig_story" else ".png"
+    filename = f"{public_id_prefix}_{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
+    try:
+        path = get_media_root() / filename
+        path.write_bytes(image_bytes)
+    except OSError as e:
+        raise ValueError(
+            f"MEDIA_ROOT não gravável: {get_media_root()}. Verifica permissões. Erro: {e}"
+        ) from e
+    url = f"{get_media_base_url()}/{filename}"
+    logger.info("Imagem gravada localmente: %s", url)
+    return url
+
+
+def _upload_image_to_cloudinary(image_bytes: bytes, public_id_prefix: str = "ig_post") -> str:
     """
     Faz upload dos bytes da imagem para Cloudinary e devolve o URL público.
     """
@@ -309,7 +341,7 @@ def get_story_image_url_from_feed_image(feed_image_url: str) -> str:
     logger.info("A gerar imagem Story a partir do post: %s", feed_image_url[:80])
     image_bytes = _download_image(feed_image_url.strip())
     story_bytes = _image_to_story_frame(image_bytes)
-    return upload_image_to_cloudinary(story_bytes, public_id_prefix="ig_story")
+    return upload_image_bytes(story_bytes, public_id_prefix="ig_story")
 
 
 def _image_to_vertical_frame_np(image_bytes: bytes) -> np.ndarray:
@@ -353,7 +385,7 @@ def get_story_video_url_from_feed_image(
             "moviepy não encontrado. Instala com: pip install moviepy imageio-ffmpeg"
         ) from e
 
-    from instagram_poster.reel_generator import upload_video_to_cloudinary
+    from instagram_poster.reel_generator import upload_video_bytes
 
     logger.info("A gerar vídeo Story com música a partir do post: %s", feed_image_url[:80])
     image_bytes = _download_image(feed_image_url.strip())
@@ -385,7 +417,7 @@ def get_story_video_url_from_feed_image(
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
-    return upload_video_to_cloudinary(video_bytes, public_id_prefix="ig_story")
+    return upload_video_bytes(video_bytes, public_id_prefix="ig_story")
 
 
 _QUOTE_CARD_PROMPT = (
@@ -461,4 +493,4 @@ def get_image_url_from_prompt(
         logger.info("A sobrepor quote na imagem: '%s'", quote_text[:60])
         image_bytes = overlay_quote_on_image(image_bytes, quote_text)
 
-    return upload_image_to_cloudinary(image_bytes, public_id_prefix=public_id_prefix)
+    return upload_image_bytes(image_bytes, public_id_prefix=public_id_prefix)

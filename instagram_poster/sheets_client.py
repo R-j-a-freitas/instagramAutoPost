@@ -392,3 +392,20 @@ def get_last_published_posts(n: int = 5) -> list[dict[str, Any]]:
     """
     all_published = get_published_posts_with_image()
     return all_published[:n]
+
+
+def get_all_rows_with_image_url() -> list[dict[str, Any]]:
+    """Devolve todas as linhas (publicadas ou não) que têm ImageURL preenchido."""
+    sheet = _get_sheet()
+    all_rows = sheet.get_all_values()
+    if not all_rows:
+        return []
+    col = _parse_header_row(all_rows[0])
+    if COL_IMAGE_URL not in col:
+        return []
+    result = []
+    for i in range(1, len(all_rows)):
+        rec = _row_to_record(all_rows[i], col, sheet_row_index=i + 1)
+        if rec and (rec.get("image_url") or "").strip():
+            result.append(rec)
+    return result

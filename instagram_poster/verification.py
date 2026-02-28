@@ -12,6 +12,8 @@ from instagram_poster.config import (
     CLOUDINARY_API_SECRET,
     CLOUDINARY_CLOUD_NAME,
     get_cloudinary_url,
+    get_media_backend,
+    get_media_root,
     IG_GRAPH_API_VERSION,
     get_gemini_api_key,
     get_ig_access_token,
@@ -258,6 +260,15 @@ verify_gemini = verify_image_provider
 
 def verify_cloudinary() -> Tuple[bool, str]:
     """Verifica se o Cloudinary está configurado e aceita upload (teste com 1x1 pixel)."""
+    if get_media_backend() == "local_http":
+        try:
+            media_root = get_media_root()
+            test_file = media_root / ".verify_write_test"
+            test_file.write_bytes(b"ok")
+            test_file.unlink()
+            return True, "Media: backend local (MEDIA_ROOT gravavel)"
+        except OSError as e:
+            return False, f"Media local: MEDIA_ROOT nao gravavel: {e}"
     cloudinary_url = get_cloudinary_url()
     if cloudinary_url and cloudinary_url.strip().startswith("cloudinary://"):
         pass
@@ -291,3 +302,16 @@ def verify_cloudinary() -> Tuple[bool, str]:
         return True, "Cloudinary: OK"
     except Exception as e:
         return False, f"Cloudinary: {e}"
+
+
+def verify_all_connections() -> List[Tuple[str, bool, str]]:
+    """
+    Executa todas as verificações de ligação e devolve lista de (nome, ok, mensagem).
+    Ordem: Google Sheets, Instagram, Imagens, Media (Cloudinary ou local).
+    """
+    results: List[Tuple[str, bool, str]] = []
+    results.append(("Google Sheets", *verify_google_sheets()))
+    results.append(("Instagram", *verify_instagram()))
+    results.append(("Imagens", *verify_image_provider()))
+    results.append(("Media", *verify_cloudinary()))
+    return results

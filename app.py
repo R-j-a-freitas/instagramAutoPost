@@ -5,6 +5,7 @@ Configura os acessos e gere os posts (usa os botões abaixo ou o menu lateral).
 import streamlit as st
 from instagram_poster import config  # noqa: F401 — carrega .env e patch IPv4
 from instagram_poster.config import get_autopublish_enabled, get_autopublish_interval
+from instagram_poster.verification import verify_all_connections
 
 st.set_page_config(page_title="Instagram Auto Post", page_icon="📸", layout="wide")
 
@@ -65,6 +66,20 @@ with col7:
 with col8:
     if st.button("🖱️ Auto Click", use_container_width=True):
         st.switch_page("pages/7_AutoClick.py")
+with col9:
+    if st.button("🔍 Verificar ligações", use_container_width=True, help="Testa Google Sheets, Instagram, Imagens e Media"):
+        with st.spinner("A verificar..."):
+            results = verify_all_connections()
+        all_ok = all(ok for _, ok, _ in results)
+        if all_ok:
+            st.success("Todas as ligações OK.")
+        else:
+            st.warning("Algumas ligações falharam.")
+        for name, ok, msg in results:
+            if ok:
+                st.success(f"**{name}:** {msg}")
+            else:
+                st.error(f"**{name}:** {msg}")
 
 st.markdown("""
 ### Como usar

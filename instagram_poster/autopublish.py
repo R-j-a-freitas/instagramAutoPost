@@ -394,7 +394,7 @@ def _try_publish_auto_reel_impl() -> bool:
             get_available_music_tracks,
             get_posts_for_reel,
             mark_posts_used_in_reel,
-            upload_video_to_cloudinary,
+            upload_video_bytes,
         )
         from instagram_poster import ig_client
     except Exception as e:
@@ -431,7 +431,7 @@ def _try_publish_auto_reel_impl() -> bool:
             audio_path=audio_path,
             audio_volume=0.3,
         )
-        video_url = upload_video_to_cloudinary(video_bytes)
+        video_url = upload_video_bytes(video_bytes)
         creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
         media_id = ig_client.publish_media(creation_id, max_wait=240)
         row_indices = [p.get("row_index") for p in posts if p.get("row_index") is not None]
@@ -495,7 +495,7 @@ def _try_publish_reel_reuse_impl() -> bool:
             generate_caption_for_posts,
             get_available_music_tracks,
             get_posts_for_reel,
-            upload_video_to_cloudinary,
+            upload_video_bytes,
         )
         from instagram_poster import ig_client
     except Exception as e:
@@ -534,7 +534,7 @@ def _try_publish_reel_reuse_impl() -> bool:
             audio_path=audio_path,
             audio_volume=0.3,
         )
-        video_url = upload_video_to_cloudinary(video_bytes)
+        video_url = upload_video_bytes(video_bytes)
         creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
         media_id = ig_client.publish_media(creation_id, max_wait=240)
         with _lock:

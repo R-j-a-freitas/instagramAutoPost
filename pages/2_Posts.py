@@ -6,15 +6,11 @@ import streamlit as st
 from datetime import date, datetime
 
 from instagram_poster import config
+from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 from instagram_poster.scheduler import run_publish_next, run_publish_row
 from instagram_poster.sheets_client import get_upcoming_posts
-from instagram_poster.verification import (
-    verify_cloudinary,
-    verify_image_provider,
-    verify_google_sheets,
-    verify_instagram,
-)
+from instagram_poster.verification import verify_all_connections
 
 if "last_publish_result" not in st.session_state:
     st.session_state.last_publish_result = None
@@ -97,13 +93,16 @@ def _render_status_sidebar():
     else:
         st.sidebar.warning(f"Imagens: provedor desconhecido ({provider_key})")
 
-    # Cloudinary
-    cloud_name = config.CLOUDINARY_CLOUD_NAME
-    cloud_url = config.CLOUDINARY_URL
-    if (cloud_url and cloud_url.strip().startswith("cloudinary://")) or cloud_name:
-        st.sidebar.success(f"Cloudinary: `{cloud_name or 'via URL'}`")
+    # Media (Cloudinary ou local HTTP)
+    if get_media_backend() == "local_http":
+        st.sidebar.success(f"Media: local HTTP ({get_media_base_url()})")
     else:
-        st.sidebar.error("Cloudinary: não configurado")
+        cloud_name = config.CLOUDINARY_CLOUD_NAME
+        cloud_url = config.CLOUDINARY_URL
+        if (cloud_url and cloud_url.strip().startswith("cloudinary://")) or cloud_name:
+            st.sidebar.success(f"Cloudinary: `{cloud_name or 'via URL'}`")
+        else:
+            st.sidebar.error("Cloudinary: não configurado")
 
     # Autopublish
     from instagram_poster import autopublish
@@ -143,19 +142,13 @@ _render_status_sidebar()
 
 if st.sidebar.button("Verificar todas as ligações"):
     _apply_config_from_session()
-    all_ok = True
-    for name, verify_fn in [
-        ("Google Sheets", verify_google_sheets),
-        ("Instagram", verify_instagram),
-        ("Imagens", verify_image_provider),
-        ("Cloudinary", verify_cloudinary),
-    ]:
-        ok, msg = verify_fn()
+    results = verify_all_connections()
+    all_ok = all(ok for _, ok, _ in results)
+    for name, ok, msg in results:
         if ok:
-            st.sidebar.success(msg)
+            st.sidebar.success(f"{name}: {msg}")
         else:
-            st.sidebar.error(msg)
-            all_ok = False
+            st.sidebar.error(f"{name}: {msg}")
     if all_ok:
         st.sidebar.success("Todas as ligações OK. Podes publicar.")
 
