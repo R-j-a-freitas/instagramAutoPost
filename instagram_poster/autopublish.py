@@ -578,7 +578,7 @@ def _try_publish_story_reuse_impl() -> bool:
         )
         from instagram_poster import image_generator, ig_client
         from instagram_poster.reel_generator import get_available_music_tracks
-        from instagram_poster.sheets_client import get_last_published_posts
+        from instagram_poster.sheets_client import get_published_posts_with_image
     except Exception as e:
         logger.warning("Autopublish Story reuse: import falhou: %s", e)
         return False
@@ -595,10 +595,32 @@ def _try_publish_story_reuse_impl() -> bool:
     if (now - last).total_seconds() < interval_minutes * 60:
         return False
 
-    posts = get_last_published_posts(n=30)
+    # Todos os posts publicados com imagem (não apenas os últimos 30); reuse usa o histórico todo
+    posts = get_published_posts_with_image()
     if not posts:
         return False
-    post = random.choice(posts)
+
+    # Evitar reutilizar um post que já foi usado numa Story nas últimas 48 h (evita "cópias da mesma")
+    cutoff = now - timedelta(hours=48)
+    story_log = [e for e in get_log() if e.get("type") == "story"]
+    recently_used_rows = set()
+    for e in story_log:
+        if e.get("row") is None:
+            continue
+        ts = e.get("timestamp")
+        if isinstance(ts, str):
+            try:
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                ts = now
+        if (ts or now) >= cutoff:
+            recently_used_rows.add(e.get("row"))
+    recently_used_rows = frozenset(recently_used_rows)
+    posts_available = [p for p in posts if p.get("row_index") not in recently_used_rows]
+    if not posts_available:
+        logger.info("Autopublish Story reuse: todos os posts recentes já usados em Story; a saltar para evitar duplicado.")
+        return False
+    post = random.choice(posts_available)
     image_url = (post.get("image_url") or "").strip()
     if not image_url:
         return False
