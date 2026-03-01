@@ -4,7 +4,12 @@ Monitorização de Stories e publicação manual (a partir de um post aleatório
 import random
 import streamlit as st
 
+from instagram_poster.auth import require_auth, render_auth_sidebar
+
 st.set_page_config(page_title="Stories | Instagram Auto Post", page_icon="📱", layout="wide")
+require_auth()
+with st.sidebar:
+    render_auth_sidebar()
 
 # Navegação
 nav1, nav2, nav3, nav4, nav5, _ = st.columns([1, 1, 1, 1, 1, 2])

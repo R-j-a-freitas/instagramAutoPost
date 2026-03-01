@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 import streamlit as st
 
+from instagram_poster.auth import require_auth, render_auth_sidebar
 from instagram_poster import config
 from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.env_utils import (
@@ -104,6 +105,9 @@ def _apply_config_from_session():
 
 
 st.set_page_config(page_title="Configuração | Instagram Auto Post", page_icon="⚙️", layout="wide")
+require_auth()
+with st.sidebar:
+    render_auth_sidebar()
 _init_config_session()
 _apply_config_from_session()
 

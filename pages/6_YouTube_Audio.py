@@ -20,7 +20,12 @@ except ImportError:
 
 import streamlit as st
 
+from instagram_poster.auth import require_auth, render_auth_sidebar
+
 st.set_page_config(page_title="YouTube Áudio | Instagram Auto Post", page_icon="🎵", layout="wide")
+require_auth()
+with st.sidebar:
+    render_auth_sidebar()
 
 # Navegação
 nav1, nav2, nav3, nav4, nav5, nav6, nav7, _ = st.columns([1, 1, 1, 1, 1, 1, 1, 2])

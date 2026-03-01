@@ -5,6 +5,7 @@ Inclui verificação das ligações antes de publicar.
 import streamlit as st
 from datetime import date, datetime
 
+from instagram_poster.auth import require_auth, render_auth_sidebar
 from instagram_poster import config
 from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.providers import AVAILABLE_PROVIDERS
@@ -125,6 +126,9 @@ def _render_status_sidebar():
 
 
 st.set_page_config(page_title="Posts | Instagram Auto Post", page_icon="📸", layout="wide")
+require_auth()
+with st.sidebar:
+    render_auth_sidebar()
 _init_config_session()
 
 nav1, nav2, _ = st.columns([1, 1, 4])

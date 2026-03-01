@@ -117,7 +117,7 @@ ENV=dev
 - **Windows:** Duplo clique em `install.bat` → depois `run.bat`
 - **Linux:** `chmod +x install.sh run.sh && ./install.sh` → depois `./run.sh`
 
-O instalador cria o ambiente virtual, instala dependências, pastas e Chromium (Playwright). Ver [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md), [INSTALL_LINUX.md](INSTALL_LINUX.md) e [docs/MANUAL_UTILIZADOR.md](docs/MANUAL_UTILIZADOR.md).
+O instalador cria o ambiente virtual, instala dependências, pastas e Chromium (Playwright). Ver [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md), [INSTALL_LINUX.md](INSTALL_LINUX.md), [docs/MANUAL_UTILIZADOR.md](docs/MANUAL_UTILIZADOR.md) e [docs/AUTH.md](docs/AUTH.md) (login e utilizadores).
 
 ### Instalação manual
 

@@ -4,8 +4,12 @@ Auto Click: grelha com 5 posições de clique, ciclo com refresh e número de ci
 import streamlit as st
 
 from instagram_poster import auto_clicker
+from instagram_poster.auth import require_auth, render_auth_sidebar
 
 st.set_page_config(page_title="Auto Click | Instagram Auto Post", page_icon="🖱️", layout="wide")
+require_auth()
+with st.sidebar:
+    render_auth_sidebar()
 
 
 @st.fragment(run_every=2)

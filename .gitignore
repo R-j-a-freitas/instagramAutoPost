@@ -1,4 +1,5 @@
 .env
+.auth.json
 *service*account*.json
 google_oauth_client.json
 old_google_oauth_client.json

@@ -11,6 +11,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from instagram_poster.auth import require_auth, render_auth_sidebar
 from instagram_poster.config import (
     get_content_extra_prompt,
     get_content_system_prompt_override,
@@ -100,6 +101,9 @@ def _dataframe_to_sheet_rows(df: pd.DataFrame) -> list[list[str]]:
 
 # --- UI ---
 st.set_page_config(page_title="Conteudo | Instagram Auto Post", page_icon="✏️", layout="wide")
+require_auth()
+with st.sidebar:
+    render_auth_sidebar()
 
 nav1, nav2, nav3, _ = st.columns([1, 1, 1, 3])
 with nav1:

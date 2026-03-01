@@ -3,22 +3,14 @@ Instagram Auto Post – Página inicial.
 Configura os acessos e gere os posts (usa os botões abaixo ou o menu lateral).
 """
 import streamlit as st
+from instagram_poster.auth import require_auth, render_auth_sidebar
 from instagram_poster import config  # noqa: F401 — carrega .env e patch IPv4
 from instagram_poster.config import get_autopublish_enabled, get_autopublish_interval
 from instagram_poster.verification import verify_all_connections
 
 st.set_page_config(page_title="Instagram Auto Post", page_icon="📸", layout="wide")
 
-# Arrancar autopublish automaticamente (uma vez por sessao Streamlit)
-if "autopublish_started" not in st.session_state:
-    st.session_state.autopublish_started = False
-if get_autopublish_enabled() and not st.session_state.autopublish_started:
-    from instagram_poster.autopublish import start_background_loop, is_running
-    if not is_running():
-        start_background_loop(interval_minutes=get_autopublish_interval())
-    st.session_state.autopublish_started = True
-
-# Callback OAuth Instagram (se configurado)
+# Callback OAuth Instagram (antes do auth — processar redirect)
 _params = st.query_params
 if "code" in _params and "state" in _params:
     _state = _params.get("state", "")
@@ -36,6 +28,20 @@ if "error" in _params:
     st.session_state.oauth_error = _params.get("error_description", _params.get("error", "Autorização cancelada."))
     st.query_params.clear()
     st.switch_page("pages/1_Configuracao.py")
+
+require_auth()
+
+# Arrancar autopublish automaticamente (uma vez por sessao Streamlit)
+if "autopublish_started" not in st.session_state:
+    st.session_state.autopublish_started = False
+if get_autopublish_enabled() and not st.session_state.autopublish_started:
+    from instagram_poster.autopublish import start_background_loop, is_running
+    if not is_running():
+        start_background_loop(interval_minutes=get_autopublish_interval())
+    st.session_state.autopublish_started = True
+
+with st.sidebar:
+    render_auth_sidebar()
 
 st.title("Instagram Auto Post")
 st.caption("Publicação via Instagram Graph API + Google Sheet")
