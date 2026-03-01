@@ -26,6 +26,13 @@
     th { color: #e1306c; font-weight: 600; }
     .tag { display: inline-block; background: #e1306c; color: #fff; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; margin: 0.25rem 0.25rem 0 0; }
     .flow { font-family: monospace; font-size: 1rem; color: #8a8; padding: 1rem; background: #1a1a1a; border-radius: 8px; margin: 1rem 0; }
+    .flow-diagram { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0; margin: 2rem 0; max-width: 900px; }
+    .flow-box { background: linear-gradient(135deg, #1e1e1e 0%, #2a2a2a 100%); border: 1px solid #e1306c; border-radius: 8px; padding: 0.9rem 1.4rem; font-size: 1rem; font-weight: 500; color: #fff; text-align: center; box-shadow: 0 2px 12px rgba(225,48,108,0.15); }
+    .flow-box.highlight { background: linear-gradient(135deg, #e1306c 0%, #c13584 100%); border-color: #fff; color: #fff; }
+    .flow-arrow { color: #e1306c; font-size: 1.5rem; font-weight: 300; padding: 0 0.25rem; }
+    .flow-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; width: 100%; margin-bottom: 0.5rem; }
+    .flow-row:last-child { margin-bottom: 0; }
+    .flow-label { font-size: 0.85rem; color: #888; margin-top: 0.5rem; }
     .slide-img { max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid #333; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
     .img-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin: 1.5rem 0; max-width: 900px; }
     .img-grid-3 { grid-template-columns: repeat(3, 1fr); max-width: 1000px; }
@@ -135,9 +142,24 @@
 
   <div class="slide" data-n="7">
     <h1>Fluxo de trabalho</h1>
-    <div class="flow">Google Sheet (calendário) → App verifica → Publica no Instagram<br>
-    Data, Hora, Texto, Imagem → Post pronto? → Feed, Story, Reel</div>
-    <p><strong>Uma única fonte de verdade</strong> — O Google Sheet é o calendário. A equipa edita; a app publica.</p>
+    <p style="margin-bottom: 0.5rem;">Uma única fonte de verdade — o calendário vive no Google Sheet.</p>
+    <div class="flow-diagram">
+      <div class="flow-row">
+        <div class="flow-box">📊 Google Sheet</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box">🔍 App verifica</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box highlight">📸 Instagram</div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-box" style="font-size: 0.9rem;">Data · Hora · Texto · Imagem</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box" style="font-size: 0.9rem;">Post pronto?</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box" style="font-size: 0.9rem;">Feed · Story · Reel</div>
+      </div>
+    </div>
+    <p class="flow-label">A equipa edita o Sheet; a app publica automaticamente na hora agendada.</p>
   </div>
 
   <div class="slide" data-n="8">
