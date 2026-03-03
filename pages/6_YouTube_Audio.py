@@ -97,20 +97,31 @@ def _sanitize_filename(name: str) -> str:
 
 def _get_ffmpeg_location() -> str | None:
     """
-    Caminho para o FFmpeg: pasta do projeto (com ffmpeg.exe) ou caminho completo do
-    executável do imageio-ffmpeg. O yt-dlp procura "ffmpeg" / "ffmpeg.exe" na pasta;
-    o imageio-ffmpeg usa um nome com versão (ex.: ffmpeg-win64-v4.2.2.exe), por isso
-    temos de passar o caminho completo do executável nesse caso.
+    Caminho para o FFmpeg: pasta do projeto (com ffmpeg/ffprobe), imageio-ffmpeg
+    ou FFmpeg do sistema (PATH).
     """
     root = Path(__file__).resolve().parent.parent
+
+    # 1) Pasta do projeto (se tiver binários compatíveis)
     for subdir in ("tools/ffmpeg", "ffmpeg", "tools/ffmpeg/bin", "ffmpeg/bin"):
         folder = root / subdir.replace("/", os.sep)
-        if (folder / "ffmpeg").exists() or (folder / "ffmpeg.exe").exists():
+        ff = folder / "ffmpeg"
+        ff_exe = folder / "ffmpeg.exe"
+        if ff.exists() or ff_exe.exists():
             return str(folder)
+
+    # 2) imageio-ffmpeg (download automático)
     if imageio_ffmpeg is not None:
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         if exe and Path(exe).exists():
             return str(Path(exe).resolve())
+
+    # 3) FFmpeg do sistema (PATH)
+    import shutil
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return str(Path(sys_ffmpeg).parent)
+
     return None
 
 
