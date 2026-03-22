@@ -35,19 +35,36 @@ def main():
         var div = document.createElement('div');
         div.id = 'autoclick-coords-overlay';
         div.setAttribute('style', 'position:fixed;left:0;top:0;background:#1a1a1a;color:#ffeb3b;padding:12px 16px;font-family:monospace;font-size:22px;font-weight:bold;z-index:2147483647;border:4px solid #ffeb3b;border-radius:8px;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.8);');
-        div.textContent = 'X: 0  Y: 0  — Clica para guardar';
+        div.textContent = 'X: 0  Y: 0  — Clique drt para guardar';
         document.body.appendChild(div);
+        window._autoclickX = 0;
+        window._autoclickY = 0;
         function updatePos(e) {
           var x = e.clientX, y = e.clientY;
-          div.textContent = 'X: ' + x + '  Y: ' + y + '  — Clica para guardar';
+          window._autoclickX = x;
+          window._autoclickY = y;
+          div.textContent = 'X: ' + x + '  Y: ' + y + '  — Clique drt para guardar';
           div.style.left = (x + 20) + 'px';
           div.style.top = (y + 15) + 'px';
         }
         document.addEventListener('mousemove', updatePos);
-        document.addEventListener('click', function(e) {
+        document.addEventListener('contextmenu', function(e) {
+          e.preventDefault();
+          var px = window._autoclickX;
+          var py = window._autoclickY;
+          var prevText = div.textContent;
+          div.textContent = 'Guardado: ' + px + ', ' + py;
+          div.style.backgroundColor = '#4CAF50';
+          div.style.color = 'white';
+          console.log('Right-clicked at:', px, py);
           if (typeof window.reportCoords === 'function') {
-            window.reportCoords(e.clientX, e.clientY);
+            window.reportCoords(px, py).catch(err => console.error('reportCoords err:', err));
           }
+          setTimeout(function() {
+            div.style.backgroundColor = '#1a1a1a';
+            div.style.color = '#ffeb3b';
+            div.textContent = prevText;
+          }, 800);
         });
       }
       if (document.readyState === 'loading') {

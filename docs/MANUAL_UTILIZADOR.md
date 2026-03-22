@@ -111,7 +111,7 @@ AUTH_ENABLED=false
 
 O instalador cria `.env` a partir de `.env.example`. Edita `.env` com as tuas credenciais:
 
-- **Google Sheets:** `IG_SHEET_ID`, OAuth ou Service Account
+- **Google Sheets:** `IG_SHEET_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`
 - **Instagram:** `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` (OAuth) ou `IG_BUSINESS_ID`, `IG_ACCESS_TOKEN`
 - **Gemini:** `GEMINI_API_KEY` (geração de imagens)
 - **Cloudinary:** `CLOUDINARY_URL` ou variáveis separadas (upload de imagens)

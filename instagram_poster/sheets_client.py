@@ -1,22 +1,25 @@
 """
 Cliente para o Google Sheets.
-Acede ao Sheet via gspread.oauth() (OAuth pessoal) ou Service Account.
+Autenticação via OAuth (abre o browser na primeira vez e guarda o token).
 Estrutura oficial das colunas:
   1. Date, 2. Time, 3. Image Text, 4. Caption, 5. Gemini_Prompt,
   6. Status, 7. Published, 8. ImageURL, 9. Image Prompt
 """
+import json
 import logging
 from pathlib import Path
 from datetime import date, datetime, time
 from typing import Any, Optional
 
 import gspread
-from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 
 from instagram_poster.config import (
     SHEET_TAB_NAME,
-    get_google_credentials_dict,
-    get_google_credentials_path,
+    get_google_oauth_client_id,
+    get_google_oauth_client_secret,
     get_ig_sheet_id,
 )
 
@@ -45,37 +48,67 @@ _OAUTH_AUTHORIZED_JSON = _PROJECT_ROOT / "google_oauth_authorized.json"
 
 
 def _get_client() -> gspread.Client:
-    """
-    Cria cliente gspread autenticado.
-    Prioridade:
-      1) gspread.oauth() com google_oauth_client.json (abre browser na 1a vez, depois usa token guardado)
-      2) Service Account em memória (upload na UI)
-      3) Service Account em ficheiro (.env)
-    """
-    # 1. OAuth pessoal (ficheiro google_oauth_client.json na raiz)
+    """Cria cliente gspread autenticado via OAuth (fluxo do browser)."""
+    creds = _get_oauth_credentials()
+    return gspread.authorize(creds)
+
+
+def _get_oauth_credentials() -> Credentials:
+    creds: Optional[Credentials] = None
+    if _OAUTH_AUTHORIZED_JSON.exists():
+        try:
+            creds = Credentials.from_authorized_user_file(str(_OAUTH_AUTHORIZED_JSON), SCOPES)
+        except Exception as exc:
+            logger.warning("Token OAuth inválido, será ignorado: %s", exc)
+            creds = None
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            _OAUTH_AUTHORIZED_JSON.write_text(creds.to_json())
+            return creds
+        except Exception as exc:
+            logger.warning("Falha ao renovar token do Google: %s", exc)
+            creds = None
+    if creds and creds.valid:
+        return creds
+
+    client_config = _load_oauth_client_config()
+    try:
+        flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+    except Exception as exc:
+        raise ValueError(
+            "OAuth do Google inválido. Confirma o client_id/client_secret na Configuração."
+        ) from exc
+    creds = flow.run_local_server(port=0, prompt="consent")
+    try:
+        _OAUTH_AUTHORIZED_JSON.write_text(creds.to_json())
+    except Exception as exc:
+        logger.warning("Não foi possível guardar o token OAuth: %s", exc)
+    return creds
+
+
+def _load_oauth_client_config() -> dict[str, Any]:
     if _OAUTH_CLIENT_JSON.exists():
         try:
-            gc = gspread.oauth(
-                credentials_filename=str(_OAUTH_CLIENT_JSON),
-                authorized_user_filename=str(_OAUTH_AUTHORIZED_JSON),
-                scopes=SCOPES,
-            )
-            return gc
-        except Exception as e:
-            logger.warning("gspread.oauth() falhou: %s", e)
-    # 2. Service Account em memória (upload na UI)
-    creds_dict = get_google_credentials_dict()
-    if creds_dict is not None:
-        creds = ServiceAccountCredentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        return gspread.authorize(creds)
-    # 3. Service Account em ficheiro
-    path = get_google_credentials_path()
-    if not path:
-        raise ValueError(
-            "Faz upload do JSON do Google na Configuração (OAuth Client ou Service Account)."
-        )
-    creds = ServiceAccountCredentials.from_service_account_file(path, scopes=SCOPES)
-    return gspread.authorize(creds)
+            return json.loads(_OAUTH_CLIENT_JSON.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("Ficheiro google_oauth_client.json inválido.") from exc
+
+    client_id = get_google_oauth_client_id()
+    client_secret = get_google_oauth_client_secret()
+    if client_id and client_secret:
+        return {
+            "installed": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["http://localhost"],
+            }
+        }
+    raise ValueError(
+        "Configura as credenciais OAuth do Google (client ID/secret) na página Configuração antes de autorizar."
+    )
 
 
 def _get_sheet():

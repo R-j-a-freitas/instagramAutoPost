@@ -19,6 +19,16 @@ def _poll_run_finished():
         st.session_state["autoclick_was_running"] = False
         st.rerun()
 
+@st.fragment(run_every=1)
+def _poll_preview_click():
+    """Verifica se houveram novos cliques na janela de preview para atualizar a UI."""
+    if auto_clicker.is_preview_running():
+        click_time = auto_clicker.get_last_click_time()
+        if click_time and click_time != st.session_state.get("autoclick_last_click_time"):
+            st.session_state["autoclick_last_click_time"] = click_time
+            # Forçar o refresh da página inteira (e não apenas do fragmento invisível)
+            st.rerun(scope="app")
+
 # Navegação
 nav1, nav2, nav3, _ = st.columns([1, 1, 1, 3])
 with nav1:
@@ -68,6 +78,18 @@ if "autoclick_pending_use" in st.session_state:
     st.session_state[f"autoclick_g{slot}_x"] = lx
     st.session_state[f"autoclick_g{slot}_y"] = ly
     del st.session_state["autoclick_pending_use"]
+
+if st.session_state.pop("autoclick_pending_add_y", False):
+    for i in range(1, 6):
+        key_y = f"autoclick_g{i}_y"
+        if key_y in st.session_state:
+            st.session_state[key_y] += 10
+
+if st.session_state.pop("autoclick_pending_sub_y", False):
+    for i in range(1, 6):
+        key_y = f"autoclick_g{i}_y"
+        if key_y in st.session_state:
+            st.session_state[key_y] = max(0, st.session_state[key_y] - 10)
 
 # --- Passo 1: Arrancar browser e autenticar ---
 st.subheader("1. Arrancar browser e autenticar")
@@ -132,7 +154,7 @@ if preview_running:
     if st.button("Fechar browser de preview", key="autoclick_stop_preview", disabled=running):
         auto_clicker.stop_preview()
         st.rerun()
-    st.caption("Browser aberto: move o rato e clica; as coordenadas aparecem. Depois usa «Usar para esta posição» na grelha.")
+    st.caption("Browser aberto: move o rato e clica com o botão direito; as coordenadas aparecem. Depois usa «Usar para esta posição» na grelha.")
 
 # --- 2. Grelha das 5 posições ---
 st.subheader("2. Grelha das 5 posições de clique")
@@ -164,16 +186,24 @@ def _grid_positions():
     ]
 
 pos_list = _grid_positions()
-col_save, col_load, _ = st.columns([1, 1, 2])
-with col_save:
-    if st.button("Guardar grelha como referência", key="autoclick_save_ref", disabled=running):
+c_save, c_load, c_add, c_sub, _ = st.columns([1.8, 1.7, 0.7, 0.7, 5.0], gap="small")
+with c_save:
+    if st.button("Guardar referência", key="autoclick_save_ref", disabled=running, use_container_width=True):
         auto_clicker.save_positions(pos_list)
         st.success("Grelha guardada.")
         st.rerun()
-with col_load:
-    if auto_clicker.load_positions() and st.button("Carregar posições guardadas", key="autoclick_load_ref", disabled=running):
+with c_load:
+    if auto_clicker.load_positions() and st.button("Carregar posições", key="autoclick_load_ref", disabled=running, use_container_width=True):
         saved = auto_clicker.load_positions()
         st.session_state["autoclick_pending_load"] = [(sx, sy) for sx, sy in saved[:5]]
+        st.rerun()
+with c_add:
+    if st.button("⬆️ +10", key="autoclick_add_10y", disabled=running, help="Adicionar 10px a todas as posições Y", use_container_width=True):
+        st.session_state["autoclick_pending_add_y"] = True
+        st.rerun()
+with c_sub:
+    if st.button("⬇️ -10", key="autoclick_sub_10y", disabled=running, help="Retirar 10px a todas as posições Y", use_container_width=True):
+        st.session_state["autoclick_pending_sub_y"] = True
         st.rerun()
 
 # --- 3. Intervalo e ciclos ---
@@ -237,3 +267,4 @@ else:
     st.caption("Parado.")
 
 _poll_run_finished()
+_poll_preview_click()

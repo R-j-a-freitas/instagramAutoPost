@@ -71,6 +71,20 @@ def get_runtime_override(key: str) -> Optional[str]:
     return _runtime_overrides.get(key)
 
 
+def get_google_oauth_client_id() -> str:
+    override = get_runtime_override("GOOGLE_OAUTH_CLIENT_ID")
+    if override:
+        return override
+    return (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or GOOGLE_OAUTH_CLIENT_ID or "").strip()
+
+
+def get_google_oauth_client_secret() -> str:
+    override = get_runtime_override("GOOGLE_OAUTH_CLIENT_SECRET")
+    if override:
+        return override
+    return (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or GOOGLE_OAUTH_CLIENT_SECRET or "").strip()
+
+
 def set_google_credentials_dict(credentials_dict: Optional[dict[str, Any]]) -> None:
     """Define as credenciais da service account a partir de um dict (ex.: JSON carregado na UI). Passa None para limpar."""
     global _runtime_google_credentials
@@ -131,12 +145,13 @@ def get_ig_access_token() -> str:
 # --- Geração de imagens (multi-provedor) ---
 IMAGE_PROVIDER: str = _optional("IMAGE_PROVIDER", "gemini")
 GEMINI_API_KEY: str = _optional("GEMINI_API_KEY", "")
-GEMINI_IMAGE_MODEL: str = _optional("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+GEMINI_IMAGE_MODEL: str = _optional("GEMINI_IMAGE_MODEL", "gemini-2.5-flash")
 OPENAI_API_KEY: str = _optional("OPENAI_API_KEY", "")
 POLLINATIONS_API_KEY: str = _optional("POLLINATIONS_API_KEY", "")
 HUGGINGFACE_TOKEN: str = _optional("HUGGINGFACE_TOKEN", "")
 FIREFLY_CLIENT_ID: str = _optional("FIREFLY_CLIENT_ID", "")
 FIREFLY_CLIENT_SECRET: str = _optional("FIREFLY_CLIENT_SECRET", "")
+GEMINI_PROXY: str = _optional("GEMINI_PROXY", "")
 
 
 def get_image_provider() -> str:
@@ -150,6 +165,11 @@ def get_image_provider() -> str:
 def get_gemini_api_key() -> str:
     """API key Gemini (env ou override da UI)."""
     return get_runtime_override("GEMINI_API_KEY") or GEMINI_API_KEY
+
+
+def get_gemini_proxy() -> Optional[str]:
+    """Proxy para pedidos Gemini (opcional, ex: http://user:pass@host:port)."""
+    return get_runtime_override("GEMINI_PROXY") or GEMINI_PROXY or None
 
 
 def get_openai_api_key() -> str:
@@ -412,3 +432,4 @@ def get_autopublish_comment_autoreply() -> bool:
 
 # --- Ambiente (dev/prod) ---
 ENV: str = _optional("ENV", "dev")
+# cache bust

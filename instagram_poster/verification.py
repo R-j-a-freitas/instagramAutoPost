@@ -159,7 +159,7 @@ def _verify_gemini() -> Tuple[bool, str]:
         from google import genai
         client = genai.Client(api_key=api_key)
         last_err = ""
-        for model in ("gemini-2.0-flash", "gemini-2.0-flash-lite"):
+        for model in ("gemini-2.5-flash", "gemini-2.0-flash"):
             try:
                 client.models.generate_content(model=model, contents="Say OK.")
                 return True, f"Gemini: OK ({model})"

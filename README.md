@@ -41,18 +41,19 @@ Para preencher **Gemini_Prompt** a partir do Image Text de cada linha, corre:
 
 ## Configuração
 
-### 1. Google Sheets (service account + partilha)
+### 1. Google Sheets (OAuth via browser)
 
-1. Abre [Google Cloud Console](https://console.cloud.google.com/) e cria um projeto (ou usa um existente).
+1. Abre o [Google Cloud Console](https://console.cloud.google.com/) e cria um projeto (ou usa um existente).
 2. Ativa a **Google Sheets API** e a **Google Drive API** para esse projeto.
-3. Em **Credenciais** → **Criar credenciais** → **Conta de serviço**:
-   - Cria uma conta de serviço e descarrega o ficheiro JSON (chave privada).
-4. Guarda o JSON num sítio seguro (ex.: `./secrets/service_account.json`).
-5. Partilha o teu Google Sheet com o **email da service account** (algo como `xxx@yyy.iam.gserviceaccount.com`) com permissão **Editor**, para a app poder ler e atualizar as células (Status, Published).
+3. Em **Credenciais** → **Criar credenciais** → **ID do cliente OAuth 2.0** → tipo **Computador** (Desktop app).
+4. Copia o **client_id** e o **client_secret** para o `.env` ou preenche-os na página Configuração da app.
+5. (Opcional) Descarrega o JSON OAuth e carrega-o na UI em vez de preencher os campos.
+6. Na app, clica em **Verificar e aceitar — Google Sheets**: o browser abre, inicias sessão com a tua conta Google e dás acesso ao Sheet. O token fica guardado localmente.
 
 No `.env`:
 
-- `GOOGLE_SERVICE_ACCOUNT_JSON=/caminho/para/service_account.json`
+- `GOOGLE_OAUTH_CLIENT_ID=`
+- `GOOGLE_OAUTH_CLIENT_SECRET=`
 - `IG_SHEET_ID=` — ID do Sheet (está na URL: `https://docs.google.com/spreadsheets/d/ESTE_É_O_ID/edit`)
 
 ### 2. App Meta / Instagram (Instagram Graph API)

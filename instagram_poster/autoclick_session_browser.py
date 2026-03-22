@@ -125,7 +125,38 @@ def main():
                 # Escrever o ficheiro da porta logo após o launch — CDP fica disponível imediatamente.
                 # Assim a UI passa a verde e o botão Iniciar fica ativo sem esperar pelo goto.
                 _PORT_FILE.write_text(str(cdp_port), encoding="utf-8")
+                
+                session_preview_script = """
+                (function() {
+                  function inject() {
+                    if (!document.body) {
+                      document.addEventListener('DOMContentLoaded', inject);
+                      return;
+                    }
+                    if (document.getElementById('autoclick-coords-overlay-small')) return;
+                    var div = document.createElement('div');
+                    div.id = 'autoclick-coords-overlay-small';
+                    div.setAttribute('style', 'position:fixed;left:0;top:0;background:#1a1a1a;color:#ffeb3b;padding:4px 8px;font-family:monospace;font-size:12px;font-weight:bold;z-index:2147483647;border:2px solid #ffeb3b;border-radius:4px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,0.8);');
+                    div.textContent = 'X: 0 Y: 0';
+                    document.body.appendChild(div);
+                    function updatePos(e) {
+                      var x = e.clientX, y = e.clientY;
+                      div.textContent = 'X: ' + x + ' Y: ' + y;
+                      div.style.left = (x + 15) + 'px';
+                      div.style.top = (y + 10) + 'px';
+                    }
+                    document.addEventListener('mousemove', updatePos);
+                  }
+                  if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', inject);
+                  } else {
+                    inject();
+                  }
+                })();
+                """
+                
                 page = browser.new_page()
+                page.add_init_script(session_preview_script)
                 page.goto(url, timeout=60000)
                 if cdp_port != _CDP_PORT_DEFAULT:
                     print(f"CDP na porta {cdp_port} (9222 ocupada).", file=sys.stderr, flush=True)

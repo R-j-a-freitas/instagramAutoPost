@@ -133,6 +133,56 @@ def _is_reply_not_top_level(comment: dict) -> bool:
     return bool(comment.get("parent_id") or comment.get("parent") or comment.get("reply_to"))
 
 
+def _migrate_from_dir_format() -> None:
+    """Migra do antigo formato baseado em diretório para o novo ficheiro JSON."""
+    if not _REPLIED_DIR_OLD.exists() or not _REPLIED_DIR_OLD.is_dir():
+        return
+    try:
+        import shutil
+        old_ids = []
+        for f in _REPLIED_DIR_OLD.iterdir():
+            if f.is_file():
+                cid = _normalize_comment_id(f.name)
+                if cid:
+                    old_ids.append(cid)
+        if old_ids:
+            current = _load_replied_ids()
+            current.update(old_ids)
+            _REPLIED_FILE.write_text(json.dumps(list(current)), encoding="utf-8")
+        shutil.rmtree(str(_REPLIED_DIR_OLD), ignore_errors=True)
+        logger.info(f"Migrados {len(old_ids)} comentários do formato diretório.")
+    except Exception as e:
+        logger.warning("Falha a migrar o diretório antigo de respostas: %s", e)
+
+
+def _try_claim_replied_id(comment_id: str) -> bool:
+    """Verifica e guarda um ID de comentário. Retorna False se já estiver guardado."""
+    current = _load_replied_ids()
+    cid = _normalize_comment_id(comment_id)
+    if not cid or cid in current:
+        return False
+    current.add(cid)
+    try:
+        _REPLIED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _REPLIED_FILE.write_text(json.dumps(list(current)), encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.error("Falha a reclamar o ID de resposta %s: %s", cid, e)
+        return False
+
+
+def _remove_replied_id(comment_id: str) -> None:
+    """Remove um ID guardado em memória caso ocorra erro ao responder via API."""
+    current = _load_replied_ids()
+    cid = _normalize_comment_id(comment_id)
+    if cid in current:
+        current.remove(cid)
+        try:
+            _REPLIED_FILE.write_text(json.dumps(list(current)), encoding="utf-8")
+        except Exception as e:
+            logger.error("Falha a remover o ID de resposta %s: %s", cid, e)
+
+
 def run_autoreply(
     message: str = _DEFAULT_MESSAGE,
     max_media: int = 10,

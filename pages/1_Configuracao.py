@@ -13,7 +13,6 @@ from instagram_poster import config
 from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.env_utils import (
     update_env_from_oauth_client_json,
-    update_env_from_service_account_json,
     update_env_vars,
 )
 from instagram_poster.providers import AVAILABLE_PROVIDERS
@@ -40,6 +39,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 def _init_config_session():
     if "config_sheet_id" not in st.session_state:
         st.session_state.config_sheet_id = config.get_ig_sheet_id() or ""
+    if "config_google_oauth_client_id" not in st.session_state:
+        st.session_state.config_google_oauth_client_id = config.get_google_oauth_client_id() or ""
+    if "config_google_oauth_client_secret" not in st.session_state:
+        st.session_state.config_google_oauth_client_secret = config.get_google_oauth_client_secret() or ""
     if "config_ig_business_id" not in st.session_state:
         st.session_state.config_ig_business_id = config.get_ig_business_id() or ""
     if "config_ig_access_token" not in st.session_state:
@@ -88,6 +91,8 @@ def _extract_sheet_id(value: str) -> str:
 def _apply_config_from_session():
     sheet_id = _extract_sheet_id(st.session_state.get("config_sheet_id", ""))
     config.set_runtime_override("IG_SHEET_ID", sheet_id)
+    config.set_runtime_override("GOOGLE_OAUTH_CLIENT_ID", st.session_state.get("config_google_oauth_client_id", ""))
+    config.set_runtime_override("GOOGLE_OAUTH_CLIENT_SECRET", st.session_state.get("config_google_oauth_client_secret", ""))
     config.set_runtime_override("IG_BUSINESS_ID", st.session_state.get("config_ig_business_id", ""))
     config.set_runtime_override("IG_ACCESS_TOKEN", st.session_state.get("config_ig_access_token", ""))
     config.set_runtime_override("GEMINI_API_KEY", st.session_state.get("config_gemini_api_key", ""))
@@ -198,53 +203,77 @@ with st.container():
 
 # ========== 1. GOOGLE SHEETS ==========
 st.subheader("1. Google Sheets")
+st.caption("Autentica via OAuth: guardas o Client ID + Secret ou fazes upload do JSON, clicas em «Verificar e aceitar» e o browser trata do resto.")
 
-# Verificar estado atual
 _oauth_client_exists = (_PROJECT_ROOT / "google_oauth_client.json").exists()
-_oauth_token_exists = (_PROJECT_ROOT / "google_oauth_authorized.json").exists()
+_oauth_token_path = _PROJECT_ROOT / "google_oauth_authorized.json"
+_oauth_token_exists = _oauth_token_path.exists()
+_has_inline_client = bool(
+    (st.session_state.config_google_oauth_client_id or "").strip()
+    and (st.session_state.config_google_oauth_client_secret or "").strip()
+)
+_client_config_available = _oauth_client_exists or _has_inline_client
 
-if _oauth_client_exists and _oauth_token_exists:
+with st.container():
+    col_oauth_id, col_oauth_secret = st.columns(2)
+    with col_oauth_id:
+        st.text_input(
+            "Google OAuth Client ID",
+            value=st.session_state.config_google_oauth_client_id,
+            key="config_google_oauth_client_id",
+            placeholder="ex.: 1234567890-abc.apps.googleusercontent.com",
+        )
+    with col_oauth_secret:
+        st.text_input(
+            "Google OAuth Client Secret",
+            value=st.session_state.config_google_oauth_client_secret,
+            key="config_google_oauth_client_secret",
+            type="password",
+            placeholder="Client secret",
+        )
+    if st.button("Guardar OAuth Client ID/Secret", key="save_google_oauth_creds"):
+        cid = (st.session_state.get("config_google_oauth_client_id") or "").strip()
+        csec = (st.session_state.get("config_google_oauth_client_secret") or "").strip()
+        if not cid or not csec:
+            st.error("Preenche ambos os campos antes de guardar.")
+        else:
+            update_env_vars({
+                "GOOGLE_OAUTH_CLIENT_ID": cid,
+                "GOOGLE_OAUTH_CLIENT_SECRET": csec,
+            })
+            config.set_runtime_override("GOOGLE_OAUTH_CLIENT_ID", cid)
+            config.set_runtime_override("GOOGLE_OAUTH_CLIENT_SECRET", csec)
+            st.success("Credenciais guardadas. Agora clica em «Verificar e aceitar» para autorizar no browser.")
+
+if _oauth_token_exists:
     st.success("Google Sheets: autorizado (token guardado)")
-    _goog_token_path = _PROJECT_ROOT / "google_oauth_authorized.json"
     if st.button("Desligar e renovar autorização", key="disconnect_google"):
-        if _goog_token_path.exists():
-            _goog_token_path.unlink()
+        if _oauth_token_path.exists():
+            _oauth_token_path.unlink()
         st.rerun()
     st.caption("Se aparecer «invalid_grant», clica acima para desligar e depois em «Verificar e aceitar» para reautorizar.")
-elif _oauth_client_exists:
-    with st.expander("📋 Instruções: autorizar Google Sheets", expanded=True):
-        st.markdown("""
-1. **Preenche o ID do Sheet** no campo abaixo (ou cola a URL completa do Google Sheet).
-2. **Clica no botão** «Verificar e aceitar — Google Sheets».
-3. O **browser abre** — escolhe a conta Google e autoriza a app.
-4. Volta aqui — a autorização fica guardada.
-        """)
-    with st.container():
-        st.info("**Próximo passo:** Clica no botão abaixo para abrir o browser e autorizar a app no Google.")
-        if st.button("🔗 Verificar e aceitar — Google Sheets (abre o browser)", type="primary", key="verify_sheets_promo"):
-            _apply_config_from_session()
-            sheet_id = _extract_sheet_id(st.session_state.get("config_sheet_id", ""))
-            if sheet_id:
-                update_env_vars({"IG_SHEET_ID": sheet_id})
-            ok, msg = verify_google_sheets()
-            if ok:
-                st.success(msg)
-                st.rerun()
-            else:
-                st.error(msg)
-                st.caption("Se o browser não abriu, verifica se tens um bloqueador de pop-ups.")
-elif config.get_google_credentials_dict() is not None or config.get_google_credentials_path():
-    st.info("Service Account configurada.")
 else:
-    st.warning("Faz upload do JSON do Google abaixo.")
+    with st.expander("📋 Como autorizar", expanded=not _client_config_available):
+        st.markdown(
+            """
+1. **Preenche o ID do Sheet** e o **OAuth Client ID + Secret** (ou faz upload do JSON).
+2. Clica em **«Verificar e aceitar — Google Sheets»**.
+3. O browser abre — escolhe a conta Google e autoriza.
+4. Volta aqui: o token fica guardado para os próximos acessos.
+            """
+        )
+    if not _client_config_available:
+        st.warning("Falta definir o OAuth Client ID/Secret ou carregar o JSON.")
+    else:
+        st.info("Clica em «Verificar e aceitar» para abrir o browser e aprovar o acesso ao Google Sheets.")
 
-st.markdown("**Upload JSON do Google**")
+st.markdown("**Upload opcional do JSON OAuth**")
 st.caption(
     "Descarrega do [Google Cloud Console](" + GOOGLE_OAUTH_SETUP + ") → "
     "Credenciais → OAuth 2.0 Client ID (Computador) → Descarregar JSON. "
-    "Ou usa Service Account."
+    "(Opcional se já preencheste ID e Secret acima.)"
 )
-uploaded = st.file_uploader("Ficheiro JSON", type=["json"], key="upload_google_json", label_visibility="collapsed")
+uploaded = st.file_uploader("Ficheiro JSON OAuth", type=["json"], key="upload_google_json", label_visibility="collapsed")
 if uploaded is not None:
     try:
         data = json.load(uploaded)
@@ -255,27 +284,14 @@ if uploaded is not None:
                 if (c.get("client_id") or "").strip() and (c.get("client_secret") or "").strip():
                     is_oauth_client = True
                     break
-        is_service_account = "client_email" in data and "token_uri" in data
-
         if is_oauth_client:
             dest = _PROJECT_ROOT / "google_oauth_client.json"
             dest.write_text(json.dumps(data, indent=2), encoding="utf-8")
             update_env_from_oauth_client_json(data)
-            st.success("✅ JSON OAuth guardado. A página vai recarregar — clica no botão «Verificar e aceitar» para abrir o browser.")
+            st.success("✅ JSON OAuth guardado. A página vai recarregar — clica em «Verificar e aceitar» para abrir o browser.")
             st.rerun()
-        elif is_service_account:
-            secrets_dir = _PROJECT_ROOT / "secrets"
-            secrets_dir.mkdir(exist_ok=True)
-            sa_path = secrets_dir / "google_service_account.json"
-            sa_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            update_env_from_service_account_json(str(sa_path.resolve()))
-            config.set_google_credentials_dict(data)
-            st.success(f"Service Account carregada: {data.get('client_email', '')}")
         else:
-            st.error(
-                "JSON não reconhecido. Deve ser **OAuth Client** (tem client_id) "
-                "ou **Service Account** (tem client_email)."
-            )
+            st.error("JSON não reconhecido. Precisas de um ficheiro OAuth Client (com client_id e client_secret).")
     except json.JSONDecodeError as e:
         st.error(f"JSON inválido: {e}")
 
@@ -298,7 +314,7 @@ if st.button("Verificar e aceitar — Google Sheets", key="verify_sheets"):
         st.error(msg)
         if "invalid_grant" in (msg or "").lower():
             st.warning("Token expirado ou revogado. Clica em «Desligar e renovar autorização» acima e depois em «Verificar e aceitar» para reautorizar no browser.")
-        elif _oauth_client_exists and not _oauth_token_exists:
+        elif _client_config_available:
             st.info("Na primeira vez, o browser deve abrir para autorizares. Se não abriu, verifica a consola/terminal.")
 
 st.divider()
@@ -857,7 +873,7 @@ with col_story_reuse_toggle:
         "Criar Stories com posts já usados a cada",
         value=_ap_story_reuse,
         key="config_autopublish_story_reuse",
-        help="Publica uma Story com a imagem do ultimo post publicado no intervalo definido ao lado.",
+        help="Publica uma Story com a imagem de um post aleatório já publicado no intervalo definido ao lado.",
     )
 with col_story_reuse_time:
     ap_story_reuse_interval_hours = st.number_input(
@@ -883,7 +899,7 @@ with col_reuse_toggle:
         "Criar Reels com posts já usados a cada",
         value=_ap_reel_reuse,
         key="config_autopublish_reel_reuse",
-        help="Gera e publica um Reel com os ultimos 5 posts (podem ser ja usados em Reels) no intervalo definido ao lado.",
+        help="Gera e publica um Reel com 5 posts aleatórios já publicados (podem ser já usados em Reels) no intervalo definido ao lado.",
     )
 with col_reuse_time:
     ap_reel_reuse_interval_hours = st.number_input(

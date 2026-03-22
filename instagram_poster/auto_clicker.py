@@ -236,6 +236,16 @@ def read_last_click() -> Optional[Tuple[int, int]]:
     return None
 
 
+def get_last_click_time() -> float:
+    """Devolve a timestamp de modificação das últimas coordenadas. Usado para polling."""
+    if not _COORDS_FILE.exists():
+        return 0.0
+    try:
+        return _COORDS_FILE.stat().st_mtime
+    except Exception:
+        return 0.0
+
+
 def start_preview(url: str) -> None:
     """Abre o browser num subprocess para ver a página; move o rato e clica para guardar coordenadas."""
     global _preview_process, _last_error

@@ -27,10 +27,112 @@ from instagram_poster.config import (
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "get_reel_used_row_indices",
+    "mark_posts_used_in_reel",
+    "get_posts_for_reel",
+    "get_available_music_tracks",
+    "generate_caption_for_posts",
+    "create_reel_video",
+    "mix_video_with_audio",
+    "repeat_video",
+    "upload_video_bytes",
+]
+
 _ASSETS_MUSIC = Path(__file__).resolve().parent.parent / "assets" / "music"
 _MUSIC_FOLDER = _ASSETS_MUSIC / "MUSIC"
 _ASSETS_ROOT = Path(__file__).resolve().parent.parent / "assets"
 _REELS_USED_ROWS_FILE = _ASSETS_ROOT / "reels_used_rows.json"
+
+
+def mix_video_with_audio(video_bytes: bytes, audio_path: str, audio_volume: float = 0.5) -> bytes:
+    """
+    Mistura um vídeo existente (bytes) com um ficheiro de áudio.
+    Faz loop do áudio se for mais curto que o vídeo.
+    """
+    try:
+        from moviepy import VideoFileClip, AudioFileClip, concatenate_audioclips, afx
+    except ImportError as e:
+        raise ImportError("moviepy não encontrado.") from e
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as v_tmp:
+        v_tmp.write(video_bytes)
+        v_tmp_path = v_tmp.name
+
+    try:
+        video = VideoFileClip(v_tmp_path)
+        audio = AudioFileClip(audio_path)
+        audio = audio.with_effects([afx.MultiplyVolume(audio_volume)])
+        
+        if audio.duration < video.duration:
+            loops = int(video.duration / audio.duration) + 1
+            audio = concatenate_audioclips([audio] * loops)
+        
+        audio = audio.subclipped(0, video.duration)
+        audio = audio.with_effects([afx.AudioFadeOut(1.5)])
+        video = video.with_audio(audio)
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as res_tmp:
+            res_path = res_tmp.name
+        
+        try:
+            video.write_videofile(
+                res_path,
+                fps=30,
+                codec="libx264",
+                audio_codec="aac",
+                logger=None
+            )
+            with open(res_path, "rb") as f:
+                return f.read()
+        finally:
+            Path(res_path).unlink(missing_ok=True)
+            video.close()
+            audio.close()
+    finally:
+        Path(v_tmp_path).unlink(missing_ok=True)
+
+
+def repeat_video(video_bytes: bytes, loops: int) -> bytes:
+    """
+    Repete um vídeo (bytes) N vezes usando MoviePy.
+    """
+    if loops <= 1:
+        return video_bytes
+
+    try:
+        from moviepy import VideoFileClip, concatenate_videoclips
+    except ImportError as e:
+        raise ImportError("moviepy não encontrado.") from e
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as v_tmp:
+        v_tmp.write(video_bytes)
+        v_tmp_path = v_tmp.name
+
+    try:
+        clip = VideoFileClip(v_tmp_path)
+        clips = [clip] * loops
+        final_video = concatenate_videoclips(clips, method="compose")
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as res_tmp:
+            res_path = res_tmp.name
+
+        try:
+            final_video.write_videofile(
+                res_path,
+                fps=30,
+                codec="libx264",
+                audio_codec="aac",
+                logger=None
+            )
+            with open(res_path, "rb") as f:
+                return f.read()
+        finally:
+            Path(res_path).unlink(missing_ok=True)
+            final_video.close()
+            clip.close()
+    finally:
+        Path(v_tmp_path).unlink(missing_ok=True)
 
 
 def get_reel_used_row_indices() -> set[int]:
@@ -66,14 +168,16 @@ def mark_posts_used_in_reel(row_indices: list[int]) -> None:
 def get_posts_for_reel(n: int, allow_reuse: bool = False) -> list[dict[str, Any]]:
     """
     Devolve até n posts publicados elegíveis para Reel.
-    Se allow_reuse for False, exclui posts cujo row_index já foi usado em algum Reel.
+    Se allow_reuse for False, exclui posts cujo row_index já foi usado em algum Reel (e devolve os mais recentes).
+    Se allow_reuse for True, devolve N posts sorteados aleatoriamente de **todo** o arquivo publicado.
     """
-    from instagram_poster.sheets_client import get_last_published_posts
-    all_posts = get_last_published_posts(n=30)
+    import random
+    from instagram_poster.sheets_client import get_published_posts_with_image
+    all_posts = get_published_posts_with_image()
     if not all_posts:
         return []
     if allow_reuse:
-        return all_posts[:n]
+        return random.sample(all_posts, min(n, len(all_posts)))
     used = get_reel_used_row_indices()
     eligible = [p for p in all_posts if (p.get("row_index") or 0) not in used]
     return eligible[:n]
@@ -241,8 +345,12 @@ def create_reel_video(
         if not url:
             logger.warning("Post sem image_url, a ignorar")
             continue
-        image_bytes = _download_image(url)
-        frame = _image_to_vertical_frame(image_bytes)
+        try:
+            image_bytes = _download_image(url)
+            frame = _image_to_vertical_frame(image_bytes)
+        except Exception as e:
+            logger.warning(f"Erro ao obter/processar imagem do post (URL: {url[:60]}...): {e}")
+            continue
         clip = ImageClip(frame, duration=duration_per_slide)
         clip = clip.with_effects([vfx.FadeIn(0.5), vfx.FadeOut(0.5)])
         clips.append(clip)

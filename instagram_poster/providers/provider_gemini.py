@@ -20,7 +20,14 @@ class GeminiProvider:
         except ImportError:
             raise ImportError("Instala o pacote google-genai: pip install google-genai") from None
 
-        client = genai.Client(api_key=api_key)
+        from instagram_poster.config import get_gemini_proxy
+        proxy = get_gemini_proxy()
+        http_options = None
+        if proxy:
+            logger.info("A usar proxy para Gemini: %s", proxy.split("@")[-1]) # Esconder credenciais no log
+            http_options = types.HttpOptions(client_args={'proxy': proxy})
+
+        client = genai.Client(api_key=api_key, http_options=http_options)
         try:
             config = types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"])
             response = client.models.generate_content(

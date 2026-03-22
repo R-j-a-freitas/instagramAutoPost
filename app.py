@@ -47,7 +47,7 @@ st.title("Instagram Auto Post")
 st.caption("Publicação via Instagram Graph API + Google Sheet")
 
 st.markdown("### Acesso rapido")
-col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns(9)
+col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = st.columns(10)
 with col1:
     if st.button("⚙️ Configuracao", use_container_width=True):
         st.switch_page("pages/1_Configuracao.py")
@@ -67,12 +67,15 @@ with col6:
     if st.button("🎬 Reels", use_container_width=True):
         st.switch_page("pages/4_Reels.py")
 with col7:
+    if st.button("🎥 Vídeo IA", use_container_width=True):
+        st.switch_page("pages/9_Video_IA.py")
+with col8:
     if st.button("🎵 YouTube Áudio", use_container_width=True):
         st.switch_page("pages/6_YouTube_Audio.py")
-with col8:
+with col9:
     if st.button("🖱️ Auto Click", use_container_width=True):
         st.switch_page("pages/7_AutoClick.py")
-with col9:
+with col10:
     if st.button("🔍 Verificar ligações", use_container_width=True, help="Testa Google Sheets, Instagram, Imagens e Media"):
         with st.spinner("A verificar..."):
             results = verify_all_connections()

@@ -73,8 +73,9 @@ _started_at: Optional[datetime] = None
 _total_published: int = 0
 _total_errors: int = 0
 _last_reel_row_indices: Optional[frozenset] = None
-_last_reel_at: Optional[datetime] = None  # último Reel (auto ou reuse) — usado para intervalo de reuse
-_last_story_reuse_at: Optional[datetime] = None  # última Story (com post ou reuse)
+_last_reel_at: Optional[datetime] = None  # último auto Reel
+_last_reuse_reel_at: Optional[datetime] = None  # último reuse Reel
+_last_story_reuse_at: Optional[datetime] = None  # última Story reuse
 _current_interval_minutes: Optional[int] = None
 
 
@@ -97,7 +98,7 @@ def _deserialize_log_entry(e: dict[str, Any]) -> dict[str, Any]:
 
 def _load_log_from_file() -> None:
     """Carrega o log do ficheiro para memória e restaura timestamps da última Story/Reel."""
-    global _log, _total_published, _total_errors, _last_reel_at, _last_story_reuse_at, _last_log_file_mtime
+    global _log, _total_published, _total_errors, _last_reel_at, _last_reuse_reel_at, _last_story_reuse_at, _last_log_file_mtime
     if not _LOG_FILE.exists():
         return
     try:
@@ -110,17 +111,18 @@ def _load_log_from_file() -> None:
                 _total_published = sum(1 for x in _log if x.get("type") == "publish" and x.get("success") is True)
                 _total_errors = sum(1 for x in _log if x.get("type") == "error" and x.get("success") is False)
                 _last_reel_at = None
+                _last_reuse_reel_at = None
                 _last_story_reuse_at = None
                 for e in reversed(_log):
                     ts = e.get("timestamp")
-                    if ts and hasattr(ts, "year") and e.get("type") == "reel":
-                        _last_reel_at = ts
-                        break
-                for e in reversed(_log):
-                    ts = e.get("timestamp")
-                    if ts and hasattr(ts, "year") and e.get("type") == "story":
-                        _last_story_reuse_at = ts
-                        break
+                    if ts and hasattr(ts, "year"):
+                        t = e.get("type")
+                        if t in ("reel", "auto_reel") and not _last_reel_at:
+                            _last_reel_at = ts
+                        elif t == "reuse_reel" and not _last_reuse_reel_at:
+                            _last_reuse_reel_at = ts
+                        elif t == "reuse_story" and not _last_story_reuse_at:
+                            _last_story_reuse_at = ts
     except Exception as e:
         logger.warning("Não foi possível carregar log do autopublish: %s", e)
 
@@ -232,8 +234,8 @@ def get_stats() -> dict[str, Any]:
             "total_published": _total_published,
             "total_errors": _total_errors,
             "total_checks": sum(1 for e in _log if e.get("type") == "check"),
-            "total_stories": sum(1 for e in _log if e.get("type") == "story"),
-            "total_reels": sum(1 for e in _log if e.get("type") == "reel"),
+            "total_stories": sum(1 for e in _log if e.get("type") in ("story", "reuse_story")),
+            "total_reels": sum(1 for e in _log if e.get("type") in ("reel", "auto_reel", "reuse_reel")),
             "total_comments": sum(1 for e in _log if e.get("type") == "comment"),
             "effective_interval_minutes": _current_interval_minutes,
         }
@@ -479,7 +481,7 @@ def _try_publish_auto_reel_impl() -> bool:
         _add_log_entry(
             True,
             f"Reel publicado (5 posts, 8s/slide): \"{caption[:50]}...\"",
-            entry_type="reel",
+            entry_type="auto_reel",
             media_id=media_id,
         )
         logger.info("Autopublish: Reel publicado, media_id=%s", media_id)
@@ -497,7 +499,7 @@ def try_publish_reel_reuse_scheduled() -> bool:
     Não marca os posts como usados (são reutilizados). Retorna True se publicou.
     Usa lock entre processos para evitar duplicados.
     """
-    global _last_reel_at
+    global _last_reuse_reel_at
     with _file_lock(_REEL_LOCK_FILE) as lock_ok:
         if not lock_ok:
             logger.info("Outro processo a publicar Reel; a ignorar para evitar duplicado.")
@@ -507,7 +509,7 @@ def try_publish_reel_reuse_scheduled() -> bool:
 
 def _try_publish_reel_reuse_impl() -> bool:
     """Implementação de try_publish_reel_reuse_scheduled (chamada dentro do lock)."""
-    global _last_reel_at
+    global _last_reuse_reel_at
     try:
         from instagram_poster.config import (
             get_autopublish_reel_reuse_interval_minutes,
@@ -531,7 +533,7 @@ def _try_publish_reel_reuse_impl() -> bool:
     interval_minutes = get_autopublish_reel_reuse_interval_minutes()
     now = datetime.now()
     with _lock:
-        last = _last_reel_at
+        last = _last_reuse_reel_at
     if last is not None and (now - last).total_seconds() < interval_minutes * 60:
         return False
 
@@ -561,11 +563,11 @@ def _try_publish_reel_reuse_impl() -> bool:
         creation_id = ig_client.create_reel(video_url=video_url, caption=caption)
         media_id = ig_client.publish_media(creation_id, max_wait=240)
         with _lock:
-            _last_reel_at = datetime.now()
+            _last_reuse_reel_at = datetime.now()
         _add_log_entry(
             True,
-            f"Reel (reuse agendado) publicado: \"{caption[:50]}...\"",
-            entry_type="reel",
+            f"Story (reuse agendado) publicada: \"{caption[:50]}...\"",
+            entry_type="reuse_story",
             media_id=media_id,
         )
         logger.info("Autopublish: Reel reuse agendado publicado, media_id=%s", media_id)
