@@ -20,8 +20,8 @@ _REPLIED_FILE = Path(__file__).resolve().parent.parent / ".comment_autoreply_rep
 _LAST_RUN_FILE = Path(__file__).resolve().parent.parent / ".comment_autoreply_last_run.json"
 _REPLIED_DIR_OLD = Path(__file__).resolve().parent.parent / ".comment_autoreply_replied"
 _DEFAULT_MESSAGE = "🙏"
-_MAX_REPLIES_PER_RUN = 5  # Limite absoluto por execução — protecção contra bugs
-_DEFAULT_DELAY_SECONDS = 3.0  # Espera entre respostas (aumentado para evitar rate limit)
+_MAX_REPLIES_PER_RUN = 15  # Limite absoluto por execução — protecção contra bugs
+_DEFAULT_DELAY_SECONDS = 2.0  # Espera entre respostas
 _OUR_ID_CACHE: str | None = None
 
 
@@ -183,21 +183,37 @@ def _remove_replied_id(comment_id: str) -> None:
             logger.error("Falha a remover o ID de resposta %s: %s", cid, e)
 
 
+def get_replied_count() -> int:
+    """Devolve o número de IDs de comentários já respondidos (para UI)."""
+    return len(_load_replied_ids())
+
+
+def reset_replied_ids() -> int:
+    """Limpa todos os IDs guardados. Retorna quantos foram removidos."""
+    count = len(_load_replied_ids())
+    try:
+        if _REPLIED_FILE.exists():
+            _REPLIED_FILE.write_text(json.dumps([]), encoding="utf-8")
+    except Exception as e:
+        logger.error("Falha ao limpar IDs respondidos: %s", e)
+    return count
+
+
 def run_autoreply(
     message: str = _DEFAULT_MESSAGE,
     max_media: int = 10,
     delay_seconds: float = _DEFAULT_DELAY_SECONDS,
 ) -> dict:
     """
-    Responde aos comentários novos que ainda não têm resposta.
-    - Processa apenas comentários posteriores à última verificação.
+    Responde aos comentários que ainda não têm resposta.
+    - Verifica TODOS os comentários (sem filtro de timestamp).
+    - Usa o ficheiro de IDs respondidos e a API para evitar duplicados.
     - Espera pela resposta da API antes de avançar para o próximo.
-    - Pausa configurável entre respostas (default 3s).
+    - Pausa configurável entre respostas (default 2s).
     Máximo _MAX_REPLIES_PER_RUN respostas por execução.
     """
     _migrate_from_dir_format()
     run_start = datetime.now(timezone.utc)
-    last_run = _load_last_run_timestamp()
 
     replied_count = 0
     skipped_count = 0
@@ -234,12 +250,6 @@ def run_autoreply(
         for comment in comments:
             if replied_count >= _MAX_REPLIES_PER_RUN:
                 break
-            if last_run is not None:
-                comment_ts = _parse_comment_timestamp(comment)
-                if comment_ts is not None and comment_ts <= last_run:
-                    skipped_count += 1
-                    log.append(f"  — Ignorado (anterior à última verificação): @{comment.get('username', '?')}")
-                    continue
             comment_id_raw = comment.get("id")
             if not comment_id_raw:
                 continue
@@ -248,21 +258,17 @@ def run_autoreply(
                 continue
             if comment_id in processed_ids:
                 skipped_count += 1
-                log.append(f"  — Ignorado (duplicado): @{comment.get('username', '?')}")
                 continue
             processed_ids.add(comment_id)
 
             if _is_reply_not_top_level(comment):
                 skipped_count += 1
-                log.append(f"  — Ignorado (resposta, não top-level): @{comment.get('username', '?')}")
                 continue
             if _comment_is_from_us(comment):
                 skipped_count += 1
-                log.append(f"  — Ignorado (comentário nosso): @{comment.get('username', '?')}")
                 continue
             if _we_already_replied(comment):
                 skipped_count += 1
-                log.append(f"  — Ignorado (já respondido): @{comment.get('username', '?')}")
                 continue
             if comment_id in replied_to_this_run:
                 logger.error("ERRO: tentativa de responder ao mesmo comentário %s duas vezes nesta execução", comment_id)
@@ -271,7 +277,6 @@ def run_autoreply(
 
             if not _try_claim_replied_id(comment_id):
                 skipped_count += 1
-                log.append(f"  — Ignorado (já reservado/respondido): @{comment.get('username', '?')}")
                 continue
             replied_to_this_run.add(comment_id)
 
@@ -281,8 +286,8 @@ def run_autoreply(
                 reply_to_comment(comment_id_raw, message)
                 replied_count += 1
                 replied_items.append({"username": username, "text_preview": text_preview, "comment_id": comment_id})
-                log.append(f"  ✓ Respondido: @{username} «{text_preview}...»")
-                logger.info("Autoresposta enviada ao comentário %s", comment_id)
+                log.append(f"  ✓ Respondido: @{username} «{text_preview}»")
+                logger.info("Autoresposta enviada ao comentário %s de @%s", comment_id, username)
                 if delay_seconds > 0:
                     _time.sleep(delay_seconds)
             except Exception as e:

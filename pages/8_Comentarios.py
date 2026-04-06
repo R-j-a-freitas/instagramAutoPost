@@ -38,7 +38,7 @@ st.caption(
     "A API do Instagram não permite dar like em comentários."
 )
 
-from instagram_poster.comment_autoreply import run_autoreply
+from instagram_poster.comment_autoreply import run_autoreply, get_replied_count, reset_replied_ids
 
 st.subheader("Configuração")
 msg = st.text_input(
@@ -80,7 +80,20 @@ if st.button("Executar autoresposta agora", type="primary", key="run_autoreply")
         )
 
 st.divider()
+
+col_info1, col_info2 = st.columns(2)
+with col_info1:
+    replied_count = get_replied_count()
+    st.metric("Comentários já respondidos (cache)", replied_count)
+with col_info2:
+    if st.button("🗑️ Limpar cache de respondidos", key="reset_replied"):
+        removed = reset_replied_ids()
+        st.success(f"{removed} ID(s) removido(s). Na próxima execução, todos os comentários serão verificados novamente.")
+        st.rerun()
+
 st.caption(
     "**Uma resposta por comentário:** cada comentário recebe no máximo uma resposta. "
-    "Os IDs são guardados em ficheiro e verificados na API para evitar duplicados."
+    "Os IDs são guardados em ficheiro e verificados na API para evitar duplicados. "
+    "Se limpares o cache, o sistema volta a verificar todos os comentários mas só responde aos que ainda não têm resposta na API."
 )
+
