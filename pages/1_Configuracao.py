@@ -9,7 +9,15 @@ from pathlib import Path
 import streamlit as st
 
 from instagram_poster.auth import require_auth, render_auth_sidebar
-from instagram_poster import config
+import instagram_poster.config as config
+# Forçar funções se faltarem (Streamlit cache issue)
+if not hasattr(config, "get_text_provider"):
+    def _tp(): return (os.getenv("TEXT_PROVIDER") or config.get_runtime_override("TEXT_PROVIDER") or "pollinations").strip()
+    config.get_text_provider = _tp
+if not hasattr(config, "get_nvidia_api_key"):
+    def _nk(): return (os.getenv("NVIDIA_API_KEY") or config.get_runtime_override("NVIDIA_API_KEY") or "").strip()
+    config.get_nvidia_api_key = _nk
+
 from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.env_utils import (
     update_env_from_oauth_client_json,
@@ -37,6 +45,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _init_config_session():
+    # Monkey-patch (v2) - Garante existência das funções mesmo se o módulo config.py estiver obsoleto na cache do Streamlit
+    import os
+    import instagram_poster.config as ip_config
+    if not hasattr(ip_config, "get_text_provider"):
+        def _get_text_provider():
+            return (os.getenv("TEXT_PROVIDER") or ip_config.get_runtime_override("TEXT_PROVIDER") or "pollinations").strip()
+        ip_config.get_text_provider = _get_text_provider
+    if not hasattr(ip_config, "get_nvidia_api_key"):
+        def _get_nvidia_api_key():
+            return (os.getenv("NVIDIA_API_KEY") or ip_config.get_runtime_override("NVIDIA_API_KEY") or "").strip()
+        ip_config.get_nvidia_api_key = _get_nvidia_api_key
+
     if "config_sheet_id" not in st.session_state:
         st.session_state.config_sheet_id = config.get_ig_sheet_id() or ""
     if "config_google_oauth_client_id" not in st.session_state:
@@ -53,6 +73,17 @@ def _init_config_session():
         st.session_state.config_openai_api_key = config.get_openai_api_key() or ""
     if "config_pollinations_api_key" not in st.session_state:
         st.session_state.config_pollinations_api_key = config.get_pollinations_api_key() or ""
+    if "config_text_provider" not in st.session_state:
+        try:
+            st.session_state.config_text_provider = config.get_text_provider()
+        except AttributeError:
+            st.error(f"Erro: 'config' não tem 'get_text_provider'. Atributos: {dir(config)}")
+            st.session_state.config_text_provider = "pollinations"
+    if "config_nvidia_api_key" not in st.session_state:
+        try:
+            st.session_state.config_nvidia_api_key = config.get_nvidia_api_key() or ""
+        except AttributeError:
+            st.session_state.config_nvidia_api_key = ""
     if "config_huggingface_token" not in st.session_state:
         st.session_state.config_huggingface_token = config.get_huggingface_token() or ""
     if "config_firefly_client_id" not in st.session_state:
@@ -66,6 +97,12 @@ def _init_config_session():
     if "config_content_system_override" not in st.session_state:
         override_content = config.get_content_system_prompt_override()
         st.session_state.config_content_system_override = override_content if override_content else ""
+    if "config_nvidia_image_model" not in st.session_state:
+        st.session_state.config_nvidia_image_model = config.get_nvidia_image_model() or "nvidia/playground-v2.5-1024px-pdi"
+    if "config_video_provider" not in st.session_state:
+        st.session_state.config_video_provider = config.get_video_provider() or "pollinations"
+    if "config_nvidia_video_model" not in st.session_state:
+        st.session_state.config_nvidia_video_model = config.get_nvidia_video_model() or "nvidia/cosmos-1.0-diffusion-7b-text2world"
     if "config_cloudinary_url" not in st.session_state:
         st.session_state.config_cloudinary_url = config.get_cloudinary_url() or ""
     if "config_media_backend" not in st.session_state:
@@ -103,6 +140,11 @@ def _apply_config_from_session():
     config.set_runtime_override("FIREFLY_CLIENT_SECRET", st.session_state.get("config_firefly_client_secret", ""))
     config.set_runtime_override("IMAGE_PROVIDER", st.session_state.get("config_image_provider", "gemini"))
     config.set_runtime_override("CONTENT_GENERATION_EXTRA_PROMPT", st.session_state.get("config_content_extra_prompt", ""))
+    config.set_runtime_override("TEXT_PROVIDER", st.session_state.get("config_text_provider", "pollinations"))
+    config.set_runtime_override("NVIDIA_API_KEY", st.session_state.get("config_nvidia_api_key", ""))
+    config.set_runtime_override("NVIDIA_IMAGE_MODEL", st.session_state.get("config_nvidia_image_model", "nvidia/playground-v2.5-1024px-pdi"))
+    config.set_runtime_override("NVIDIA_VIDEO_MODEL", st.session_state.get("config_nvidia_video_model", "nvidia/cosmos-1.0-diffusion-7b-text2world"))
+    config.set_runtime_override("VIDEO_PROVIDER", st.session_state.get("config_video_provider", "pollinations"))
     config.set_runtime_override("CLOUDINARY_URL", st.session_state.get("config_cloudinary_url", ""))
     config.set_runtime_override("MEDIA_BACKEND", st.session_state.get("config_media_backend", "cloudinary"))
     config.set_runtime_override("MEDIA_ROOT", st.session_state.get("config_media_root", "/srv/instagram_media"))
@@ -182,6 +224,26 @@ with st.container():
                 st.success(f"Cloudinary\n\n`{_cn or 'via URL'}`")
             else:
                 st.error("Cloudinary\n\nnão configurado")
+    
+    with st.container():
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            _tp = st.session_state.get("config_text_provider", "pollinations")
+            _tp_label = "NVIDIA Kimi" if _tp == "nvidia_kimi" else "Pollinations AI"
+            if _tp == "nvidia_kimi":
+                _nk = st.session_state.get("config_nvidia_api_key", "")
+                if _nk:
+                    st.success(f"Texto IA\n\n{_tp_label}\n`{_mask_key(_nk)}`")
+                else:
+                    st.error(f"Texto IA\n\n{_tp_label}\nAPI key em falta")
+            else:
+                st.success(f"Texto IA\n\n{_tp_label}\n(Grátis)")
+        with c6:
+            st.empty()
+        with c7:
+            st.empty()
+        with c8:
+            st.empty()
 
     # Botão para verificar todas as ligações
     if st.button("🔍 Verificar todas as ligações", type="primary", key="verify_all_cfg"):
@@ -554,6 +616,23 @@ elif selected_provider == "firefly":
         placeholder="Client Secret",
     )
     st.caption("Adobe Firefly API. Cria um projeto no Adobe Developer Console e adiciona o produto Firefly Services para obter Client ID e Secret.")
+elif selected_provider == "nvidia":
+    st.link_button("🚀 Obter API Key NVIDIA NIM (1000 créditos grátis)", "https://build.nvidia.com/explore/discover", use_container_width=True)
+    st.text_input(
+        "NVIDIA API Key",
+        value=st.session_state.get("config_nvidia_api_key", ""),
+        key="config_nvidia_api_key",
+        type="password",
+        placeholder="nvapi-...",
+    )
+    st.caption("Preço: Grátis (1000 créditos de teste). Uso comercial requer licença NVIDIA AI Enterprise (~$1/GPU-hour).")
+    st.text_input(
+        "NVIDIA Image Model",
+        value=st.session_state.get("config_nvidia_image_model", "nvidia/playground-v2.5-1024px-pdi"),
+        key="config_nvidia_image_model",
+        placeholder="nvidia/playground-v2.5-1024px-pdi",
+    )
+    st.caption("Foco: Playground v2.5 (Estética superior) ou modelos SDXL via NIM.")
 
 # Persistir o provedor escolhido no .env assim que mudar (para Publicar usar o correto mesmo após F5)
 _current_env_provider = (os.getenv("IMAGE_PROVIDER") or "gemini").strip()
@@ -586,6 +665,13 @@ if st.button("Verificar e gravar a configuração escolhida", key="verify_image_
             env_updates["FIREFLY_CLIENT_ID"] = firefly_id
         if firefly_secret:
             env_updates["FIREFLY_CLIENT_SECRET"] = firefly_secret
+    elif selected_provider == "nvidia":
+        nvidia_key = st.session_state.get("config_nvidia_api_key", "")
+        if nvidia_key:
+            env_updates["NVIDIA_API_KEY"] = nvidia_key
+        img_model = st.session_state.get("config_nvidia_image_model", "")
+        if img_model:
+            env_updates["NVIDIA_IMAGE_MODEL"] = img_model
     update_env_vars(env_updates)
     ok, msg = verify_image_provider()
     if ok:
@@ -617,10 +703,13 @@ if st.button("Gerar imagem de teste", key="generate_test_image"):
         if st.session_state.get("config_huggingface_token"):
             env_updates["HUGGINGFACE_TOKEN"] = st.session_state.config_huggingface_token
     elif selected_provider == "firefly":
-        if st.session_state.get("config_firefly_client_id"):
-            env_updates["FIREFLY_CLIENT_ID"] = st.session_state.config_firefly_client_id
         if st.session_state.get("config_firefly_client_secret"):
             env_updates["FIREFLY_CLIENT_SECRET"] = st.session_state.config_firefly_client_secret
+    elif selected_provider == "nvidia":
+        if st.session_state.get("config_nvidia_api_key"):
+            env_updates["NVIDIA_API_KEY"] = st.session_state.config_nvidia_api_key
+        if st.session_state.get("config_nvidia_image_model"):
+            env_updates["NVIDIA_IMAGE_MODEL"] = st.session_state.config_nvidia_image_model
     update_env_vars(env_updates)
     config.set_runtime_override("IMAGE_PROVIDER", selected_provider)
     try:
@@ -638,8 +727,98 @@ if st.button("Gerar imagem de teste", key="generate_test_image"):
 
 st.divider()
 
-# ========== 4. BACKEND DE MEDIA ==========
-st.subheader("4. Backend de media")
+# ========== 4. GERAÇÃO DE TEXTO (IA) ==========
+st.subheader("4. Geração de Texto (IA)")
+st.caption("Escolhe o modelo a usar para criar conteúdos (posts e captions).")
+
+_text_providers = {"pollinations": "Pollinations (OpenAI)", "nvidia_kimi": "NVIDIA Kimi 2.5 (moonshotai)"}
+_current_text_provider = st.session_state.get("config_text_provider", "pollinations")
+_text_idx = list(_text_providers.keys()).index(_current_text_provider) if _current_text_provider in _text_providers else 0
+
+selected_text_provider = st.selectbox(
+    "Provedor de Texto (IA)",
+    options=list(_text_providers.keys()),
+    format_func=lambda k: _text_providers[k],
+    index=_text_idx,
+    key="config_text_provider",
+)
+
+if selected_text_provider == "nvidia_kimi":
+    st.link_button("🚀 Obter API Key NVIDIA NIM (Kimi 2.5 - 1000 créditos grátis)", "https://build.nvidia.com/moonshotai/kimi-k2_5", use_container_width=True)
+    st.text_input(
+        "NVIDIA API Key",
+        value=st.session_state.get("config_nvidia_api_key", ""),
+        key="config_nvidia_api_key",
+        type="password",
+        placeholder="nvapi-...",
+    )
+    st.caption("NVIDIA NIM (Kimi 2.5): Modelo multimodal rápido e inteligente. Inclui trial gratuito.")
+elif selected_text_provider == "pollinations":
+    st.caption("O Pollinations tira partido do seu tier generoso, e se não inserires key, utiliza na mesma com rate-limit.")
+
+if st.button("Gravar Configuração de Texto", key="save_text_provider"):
+    _apply_config_from_session()
+    env_updates = {"TEXT_PROVIDER": selected_text_provider}
+    if selected_text_provider == "nvidia_kimi":
+        nvidia_key = st.session_state.get("config_nvidia_api_key", "").strip()
+        if nvidia_key:
+            env_updates["NVIDIA_API_KEY"] = nvidia_key
+    update_env_vars(env_updates)
+    st.success(f"Provedor de texto guardado: {_text_providers[selected_text_provider]}")
+
+st.divider()
+
+# ========== 4.1. GERAÇÃO DE VÍDEO (IA) ==========
+st.subheader("4.1. Geração de Vídeo (IA)")
+st.caption("Escolhe o provedor para gerar vídeos a partir de prompts (Página Vídeo IA).")
+
+_video_providers = {"pollinations": "Pollinations (Seedance/Wan/Grok)", "nvidia": "NVIDIA NIM (Cosmos 1.0)"}
+_current_video_provider = st.session_state.get("config_video_provider", "pollinations")
+_video_idx = list(_video_providers.keys()).index(_current_video_provider) if _current_video_provider in _video_providers else 0
+
+selected_video_provider = st.selectbox(
+    "Provedor de Vídeo (IA)",
+    options=list(_video_providers.keys()),
+    format_func=lambda k: _video_providers[k],
+    index=_video_idx,
+    key="config_video_provider",
+)
+
+if selected_video_provider == "nvidia":
+    st.link_button("🚀 Obter API Key NVIDIA NIM (Cosmos 1.0)", "https://build.nvidia.com/nvidia/cosmos-1_0-diffusion-7b-text2world", use_container_width=True)
+    st.text_input(
+        "NVIDIA API Key",
+        value=st.session_state.get("config_nvidia_api_key", ""),
+        key="config_nvidia_api_key",
+        type="password",
+        placeholder="nvapi-...",
+    )
+    st.caption("Preço: Grátis (consumo de créditos NVIDIA NIM). Cosmos 1.0 é topo de gama para vídeo.")
+    st.text_input(
+        "NVIDIA Video Model",
+        value=st.session_state.get("config_nvidia_video_model", "nvidia/cosmos-1.0-diffusion-7b-text2world"),
+        key="config_nvidia_video_model",
+        placeholder="nvidia/cosmos-1.0-diffusion-7b-text2world",
+    )
+    st.caption("Usa modelos de vídeo via NVIDIA NIM. Ex: nvidia/cosmos-1.0-diffusion-7b-text2world.")
+
+if st.button("Gravar Configuração de Vídeo", key="save_video_provider"):
+    _apply_config_from_session()
+    env_updates = {"VIDEO_PROVIDER": selected_video_provider}
+    if selected_video_provider == "nvidia":
+        nvidia_key = st.session_state.get("config_nvidia_api_key", "")
+        if nvidia_key:
+            env_updates["NVIDIA_API_KEY"] = nvidia_key
+        vid_model = st.session_state.get("config_nvidia_video_model", "")
+        if vid_model:
+            env_updates["NVIDIA_VIDEO_MODEL"] = vid_model
+    update_env_vars(env_updates)
+    st.success(f"Provedor de vídeo guardado: {_video_providers[selected_video_provider]}")
+
+st.divider()
+
+# ========== 5. BACKEND DE MEDIA ==========
+st.subheader("5. Backend de media")
 st.caption(
     "Escolhe onde guardar imagens e vídeos: Cloudinary (nuvem) ou servidor local (nginx). "
     "Com local_http, os ficheiros são gravados em disco e servidos via URL público. "
@@ -687,8 +866,8 @@ if st.button("Guardar — Backend de media", key="save_media_backend"):
 
 st.divider()
 
-# ========== 5. CLOUDINARY ==========
-st.subheader("5. Cloudinary")
+# ========== 6. CLOUDINARY ==========
+st.subheader("6. Cloudinary")
 if media_backend == "local_http":
     st.info("Media: backend local (Cloudinary não necessário). Os campos abaixo aplicam-se apenas quando MEDIA_BACKEND=cloudinary.")
 else:
@@ -726,8 +905,8 @@ else:
 
 st.divider()
 
-# ========== 6. GERAÇÃO DE CONTEÚDO ==========
-st.subheader("6. Geração de conteúdo")
+# ========== 7. GERAÇÃO DE CONTEÚDO ==========
+st.subheader("7. Geração de conteúdo")
 st.caption("Personaliza o prompt usado na página Conteúdo para variar temas ao longo do tempo ou consoante o que está em moda.")
 content_extra = st.text_area(
     "Instruções adicionais / Foco actual",
@@ -773,8 +952,8 @@ if st.button("Guardar — Geração de conteúdo", key="save_content_generation"
 
 st.divider()
 
-# ========== 7. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
-st.subheader("7. Preencher Gemini_Prompt no Sheet")
+# ========== 8. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
+st.subheader("8. Preencher Gemini_Prompt no Sheet")
 st.caption(
     "Gera descrições visuais (sem texto) a partir da Image Text de cada linha, "
     "usando IA para converter a quote numa cena. A quote é sobreposta na imagem ao publicar."
@@ -808,8 +987,8 @@ if st.button("Preencher Gemini_Prompt no Sheet"):
 
 st.divider()
 
-# ========== 8. AUTOPUBLISH ==========
-st.subheader("8. Publicacao automatica")
+# ========== 9. AUTOPUBLISH ==========
+st.subheader("9. Publicacao automatica")
 st.caption("Publica posts automaticamente na hora agendada no Sheet. Funciona com a app aberta ou via Task Scheduler.")
 
 from instagram_poster import autopublish

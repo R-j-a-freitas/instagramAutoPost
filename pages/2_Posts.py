@@ -169,7 +169,7 @@ except Exception as e:
     st.stop()
 
 if not posts:
-    st.warning("Nenhum post encontrado a partir de hoje no Sheet.")
+    st.warning("Nenhum post encontrado para os próximos dias, nem posts por publicar de dias anteriores.")
     st.stop()
 
 st.subheader("Próximos posts")

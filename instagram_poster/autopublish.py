@@ -319,8 +319,8 @@ def log_reel_manual(caption: str, media_id: str) -> None:
     global _last_reel_at
     with _lock:
         _last_reel_at = datetime.now()
-    cap = (caption or "").strip() or "Reel gerado automaticamente"
-    msg = f"Reel publicado (manual): \"{cap[:50]}...\"" if len(cap) > 50 else f"Reel publicado (manual): \"{cap}\""
+    cap = (caption or "").strip() or "Automated Reel highlights. #keepcalmnbepositive"
+    msg = f"Reel published (manual): \"{cap[:50]}...\"" if len(cap) > 50 else f"Reel published (manual): \"{cap}\""
     _add_log_entry(True, msg, entry_type="reel", media_id=media_id)
 
 

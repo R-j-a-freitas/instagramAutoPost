@@ -10,6 +10,7 @@ AVAILABLE_PROVIDERS = {
     "pollinations": "Pollinations (grátis)",
     "huggingface": "Hugging Face (free tier, créditos limitados)",
     "firefly": "Adobe Firefly",
+    "nvidia": "NVIDIA NIM (Playground/SDXL/Cosmos)",
 }
 
 
@@ -35,6 +36,9 @@ def get_provider(name: str) -> ImageProvider:
     if name == "firefly":
         from instagram_poster.providers.provider_firefly import FireflyProvider
         return FireflyProvider()
+    if name == "nvidia":
+        from instagram_poster.providers.provider_nvidia import NVIDIAProvider
+        return NVIDIAProvider()
     raise ValueError(
         f"Provedor de imagem desconhecido: '{name}'. "
         f"Opções: {', '.join(AVAILABLE_PROVIDERS.keys())}"

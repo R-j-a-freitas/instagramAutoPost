@@ -60,7 +60,7 @@ _runtime_overrides: dict[str, str] = {}
 
 
 def set_runtime_override(key: str, value: str) -> None:
-    """Define um valor em runtime (ex.: campo preenchido na UI). Use chaves: IG_SHEET_ID, IG_BUSINESS_ID, IG_ACCESS_TOKEN, GEMINI_API_KEY."""
+    """Define um valor em runtime (ex.: campo preenchido na UI). Use chaves: IG_SHEET_ID, IG_BUSINESS_ID, IG_ACCESS_TOKEN, GEMINI_API_KEY, NVIDIA_API_KEY, etc."""
     if value is not None and str(value).strip():
         _runtime_overrides[key] = str(value).strip()
     elif key in _runtime_overrides:
@@ -144,6 +144,7 @@ def get_ig_access_token() -> str:
 
 # --- Geração de imagens (multi-provedor) ---
 IMAGE_PROVIDER: str = _optional("IMAGE_PROVIDER", "gemini")
+VIDEO_PROVIDER: str = _optional("VIDEO_PROVIDER", "pollinations")
 GEMINI_API_KEY: str = _optional("GEMINI_API_KEY", "")
 GEMINI_IMAGE_MODEL: str = _optional("GEMINI_IMAGE_MODEL", "gemini-2.5-flash")
 OPENAI_API_KEY: str = _optional("OPENAI_API_KEY", "")
@@ -152,14 +153,24 @@ HUGGINGFACE_TOKEN: str = _optional("HUGGINGFACE_TOKEN", "")
 FIREFLY_CLIENT_ID: str = _optional("FIREFLY_CLIENT_ID", "")
 FIREFLY_CLIENT_SECRET: str = _optional("FIREFLY_CLIENT_SECRET", "")
 GEMINI_PROXY: str = _optional("GEMINI_PROXY", "")
+NVIDIA_IMAGE_MODEL: str = _optional("NVIDIA_IMAGE_MODEL", "nvidia/playground-v2.5-1024px-pdi")
+NVIDIA_VIDEO_MODEL: str = _optional("NVIDIA_VIDEO_MODEL", "nvidia/cosmos-1.0-diffusion-7b-text2world")
 
 
 def get_image_provider() -> str:
-    """Provedor de imagens activo (override da UI, depois .env). Lê os.getenv em cada chamada para refletir alterações ao .env sem reiniciar."""
+    """Provedor de imagens activo (override da UI, depois .env)."""
     override = get_runtime_override("IMAGE_PROVIDER")
     if override:
         return override
     return (os.getenv("IMAGE_PROVIDER") or IMAGE_PROVIDER or "gemini").strip()
+
+
+def get_video_provider() -> str:
+    """Provedor de vídeo activo (override da UI, depois .env)."""
+    override = get_runtime_override("VIDEO_PROVIDER")
+    if override:
+        return override
+    return (os.getenv("VIDEO_PROVIDER") or VIDEO_PROVIDER or "pollinations").strip()
 
 
 def get_gemini_api_key() -> str:
@@ -178,11 +189,38 @@ def get_openai_api_key() -> str:
 
 
 def get_pollinations_api_key() -> str:
-    """API key Pollinations (env ou override da UI). Opcional — sem key funciona com rate-limit."""
+    """API key Pollinations (env ou override da UI)."""
     return get_runtime_override("POLLINATIONS_API_KEY") or POLLINATIONS_API_KEY
 
 
-# --- Geração de conteúdo (texto para posts) ---
+# --- Geração de conteúdo (texto para posts e captions) ---
+TEXT_PROVIDER: str = _optional("TEXT_PROVIDER", "pollinations")
+NVIDIA_API_KEY: str = _optional("NVIDIA_API_KEY", "")
+
+
+def get_text_provider() -> str:
+    """Provedor de IA de Texto activo (override da UI, depois .env). Default é pollinations."""
+    override = get_runtime_override("TEXT_PROVIDER")
+    if override:
+        return override
+    return (os.getenv("TEXT_PROVIDER") or TEXT_PROVIDER or "pollinations").strip()
+
+
+def get_nvidia_api_key() -> str:
+    """API key NVIDIA (env ou override da UI)."""
+    return get_runtime_override("NVIDIA_API_KEY") or NVIDIA_API_KEY
+
+
+def get_nvidia_image_model() -> str:
+    """Nome do modelo NVIDIA NIM para imagem."""
+    return get_runtime_override("NVIDIA_IMAGE_MODEL") or NVIDIA_IMAGE_MODEL
+
+
+def get_nvidia_video_model() -> str:
+    """Nome do modelo NVIDIA NIM para vídeo."""
+    return get_runtime_override("NVIDIA_VIDEO_MODEL") or NVIDIA_VIDEO_MODEL
+
+
 CONTENT_GENERATION_EXTRA_PROMPT: str = _optional("CONTENT_GENERATION_EXTRA_PROMPT", "")
 _CONTENT_SYSTEM_PROMPT_OVERRIDE_FILE = _env_root / "content_system_prompt_override.txt"
 
@@ -218,10 +256,6 @@ Each row has these columns (fixed order):
 ### Image Text (quote)
 - Short, strong phrase that stands on its own.
 - In simple English, first person, aligned with the account style.
-- Style examples (do NOT repeat these, only use as reference):
-  - "Today I focus on what I can do, not on what I can't control."
-  - "Resting is not losing time. Resting prepares me for the time ahead."
-  - "I give myself permission to grow at my own pace."
 - Avoid empty cliches like "good vibes only", "think positive".
 - Each quote should focus on a concrete micro-theme (self-talk, boundaries, rest, gratitude, anxiety, etc.).
 
@@ -241,8 +275,6 @@ Each row has these columns (fixed order):
   - Do NOT include any text, letters, or words in the image.
   - Mention: main scene, environment, color palette, emotion/mood.
   - If there are people: no close-up faces; can be from behind, silhouette, or distant.
-- Example style (do NOT copy, only reference for detail level):
-  - "Serene breathing moment: a person sitting near a window with plants, hands resting gently on their chest. Soft blue and green tones, lots of calm space. No text in the image."
 
 ### Status, Published, ImageURL, Image Prompt
 - Status: always "ready"
@@ -286,7 +318,7 @@ def get_default_content_system_prompt() -> str:
 
 
 def get_huggingface_token() -> str:
-    """Token Hugging Face (env ou override da UI). Grátis em huggingface.co/settings/tokens."""
+    """Token Hugging Face (env ou override da UI)."""
     return get_runtime_override("HUGGINGFACE_TOKEN") or HUGGINGFACE_TOKEN
 
 
@@ -300,37 +332,32 @@ def get_firefly_client_secret() -> str:
     return get_runtime_override("FIREFLY_CLIENT_SECRET") or FIREFLY_CLIENT_SECRET
 
 
-# --- Upload de imagens geradas (obrigatório para publicar sem ImageURL no Sheet) ---
-# Opção 1: URL única (formato: cloudinary://API_KEY:API_SECRET@CLOUD_NAME)
+# --- Upload de imagens geradas ---
 CLOUDINARY_URL: str = _optional("CLOUDINARY_URL", "")
-# Opção 2: variáveis separadas (como no dashboard Cloudinary)
 CLOUDINARY_CLOUD_NAME: str = _optional("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY: str = _optional("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET: str = _optional("CLOUDINARY_API_SECRET", "")
 
 
 def get_cloudinary_url() -> str:
-    """CLOUDINARY_URL (env ou override da UI). Formato: cloudinary://API_KEY:API_SECRET@CLOUD_NAME."""
+    """CLOUDINARY_URL (env ou override da UI)."""
     return get_runtime_override("CLOUDINARY_URL") or CLOUDINARY_URL
 
 
 # --- Backend de media (cloudinary ou local_http) ---
-# MEDIA_BACKEND: "cloudinary" (default) ou "local_http"
-# MEDIA_ROOT: directorio local onde as imagens/videos sao gravados quando MEDIA_BACKEND="local_http"
-# MEDIA_BASE_URL: URL publico servido por nginx (ex.: https://magnific1.ddns.net)
 MEDIA_BACKEND: str = _optional("MEDIA_BACKEND", "cloudinary")
 MEDIA_ROOT: str = _optional("MEDIA_ROOT", "/srv/instagram_media")
 MEDIA_BASE_URL: str = _optional("MEDIA_BASE_URL", "https://magnific1.ddns.net")
 
 
 def get_media_backend() -> str:
-    """Retorna 'cloudinary' ou 'local_http'. Valores invalidos -> fallback 'cloudinary'."""
+    """Retorna 'cloudinary' ou 'local_http'."""
     val = (get_runtime_override("MEDIA_BACKEND") or os.getenv("MEDIA_BACKEND") or MEDIA_BACKEND).strip().lower()
     return "local_http" if val == "local_http" else "cloudinary"
 
 
 def get_media_root() -> Path:
-    """Path do directorio de media. Cria o directorio se nao existir (mkdir parents=True, exist_ok=True)."""
+    """Path do directorio de media."""
     raw = get_runtime_override("MEDIA_ROOT") or os.getenv("MEDIA_ROOT") or MEDIA_ROOT
     path = Path(raw.strip()) if raw else Path("/srv/instagram_media")
     path.mkdir(parents=True, exist_ok=True)
@@ -371,25 +398,21 @@ def get_autopublish_interval() -> int:
 
 
 def get_autopublish_story_with_post() -> bool:
-    """Se True, publica também uma Story no Instagram quando um post é publicado automaticamente."""
     val = get_runtime_override("AUTOPUBLISH_STORY_WITH_POST") or os.getenv("AUTOPUBLISH_STORY_WITH_POST") or AUTOPUBLISH_STORY_WITH_POST
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_story_with_music() -> bool:
-    """Se True, as Stories são publicadas como vídeo com música (imagem + áudio da pasta MUSIC)."""
     val = get_runtime_override("AUTOPUBLISH_STORY_WITH_MUSIC") or os.getenv("AUTOPUBLISH_STORY_WITH_MUSIC") or AUTOPUBLISH_STORY_WITH_MUSIC
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_story_reuse_schedule_enabled() -> bool:
-    """Se True, publica uma Story (com imagem de um post já publicado) a cada X tempo (intervalo definido)."""
     val = get_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE") or os.getenv("AUTOPUBLISH_STORY_REUSE_SCHEDULE") or AUTOPUBLISH_STORY_REUSE_SCHEDULE
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_story_reuse_interval_minutes() -> int:
-    """Intervalo em minutos para a Story agendada (reutilizar post já publicado)."""
     val = get_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES") or os.getenv("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES
     try:
         return max(30, int(val))
@@ -398,25 +421,21 @@ def get_autopublish_story_reuse_interval_minutes() -> int:
 
 
 def get_autopublish_reel_every_5() -> bool:
-    """Se True, gera e publica um Reel automaticamente sempre que houver 5 posts (últimos 5 diferentes)."""
     val = get_runtime_override("AUTOPUBLISH_REEL_EVERY_5") or os.getenv("AUTOPUBLISH_REEL_EVERY_5") or AUTOPUBLISH_REEL_EVERY_5
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_reel_allow_reused_posts() -> bool:
-    """Se True, o Reel automático pode usar posts já usados em Reels anteriores."""
     val = get_runtime_override("AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS") or os.getenv("AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS") or AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_reel_reuse_schedule_enabled() -> bool:
-    """Se True, gera um Reel com posts já usados em Reels a cada X minutos (intervalo definido)."""
     val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE") or os.getenv("AUTOPUBLISH_REEL_REUSE_SCHEDULE") or AUTOPUBLISH_REEL_REUSE_SCHEDULE
     return val.lower() in ("true", "1", "yes", "on")
 
 
 def get_autopublish_reel_reuse_interval_minutes() -> int:
-    """Intervalo em minutos para o Reel agendado com posts já usados."""
     val = get_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or os.getenv("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES") or AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES
     try:
         return max(30, int(float(val)))
@@ -425,11 +444,9 @@ def get_autopublish_reel_reuse_interval_minutes() -> int:
 
 
 def get_autopublish_comment_autoreply() -> bool:
-    """Se True, executa autoresposta a comentários em cada verificação do autopublish."""
     val = get_runtime_override("AUTOPUBLISH_COMMENT_AUTOREPLY") or os.getenv("AUTOPUBLISH_COMMENT_AUTOREPLY") or AUTOPUBLISH_COMMENT_AUTOREPLY
     return val.lower() in ("true", "1", "yes", "on")
 
 
-# --- Ambiente (dev/prod) ---
+# --- Ambiente ---
 ENV: str = _optional("ENV", "dev")
-# cache bust

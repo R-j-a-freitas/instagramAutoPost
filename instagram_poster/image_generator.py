@@ -29,9 +29,9 @@ from instagram_poster.config import (
     get_media_backend,
     get_media_base_url,
     get_media_root,
-    get_pollinations_api_key,
 )
 from instagram_poster.providers import get_provider
+from instagram_poster.text_generator import generate_text
 
 logger = logging.getLogger(__name__)
 

@@ -154,13 +154,33 @@ def _row_to_record(row: list[Any], col: dict[str, int], sheet_row_index: int) ->
 
 
 def _parse_date(s: str) -> Optional[date]:
-    """Parse YYYY-MM-DD."""
+    """Parse various date formats like YYYY-MM-DD, DD/MM/YYYY, etc."""
     if not s:
         return None
-    try:
-        return datetime.strptime(s.strip()[:10], "%Y-%m-%d").date()
-    except ValueError:
-        return None
+    s = s.strip()
+    # Try common ISO format first
+    if len(s) >= 10 and "-" in s[:5]:
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    
+    # Try other formats
+    formats = ["%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y", "%Y-%m-%d"]
+    for fmt in formats:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            try:
+                # Handle cases like D/M/YYYY
+                parts = s.split("/")
+                if len(parts) == 3:
+                   # Try to pad components
+                   padded = f"{int(parts[0]):02d}/{int(parts[1]):02d}/{int(parts[2]):04d}"
+                   return datetime.strptime(padded, "%d/%m/%Y").date()
+            except:
+                continue
+    return None
 
 
 def _parse_time(s: str) -> Optional[time]:
@@ -253,9 +273,21 @@ def get_upcoming_posts(n: int = 14, from_date: Optional[date] = None) -> list[di
         rec = _row_to_record(all_rows[i], col, sheet_row_index=i + 1)
         if not rec:
             continue
-        d = _parse_date(rec["date"])
-        if d is None or d < from_date:
+        d_str = rec.get("date", "")
+        d = _parse_date(d_str)
+        if d is None:
+            if d_str.strip():
+                logger.warning("get_upcoming_posts: Falha ao interpretar data na linha %s: '%s'", i + 1, d_str)
             continue
+            
+        published_val = (rec.get("published") or "").strip().lower()
+        is_published = published_val in ("yes", "y", "1", "true")
+        
+        # O critério pedido: mostrar tudo de hoje em diante, MAIS os anteriores não publicados.
+        if d < from_date and is_published:
+            # Pula se for antigo E já publicado.
+            continue
+            
         t = _parse_time(rec["time"]) or time(0, 0)
         candidates.append((d, t, rec))
 

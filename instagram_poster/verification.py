@@ -20,6 +20,11 @@ from instagram_poster.config import (
     get_ig_business_id,
     get_image_provider,
     get_openai_api_key,
+    get_text_provider,
+    get_nvidia_api_key,
+    get_nvidia_image_model,
+    get_nvidia_video_model,
+    get_video_provider,
 )
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 
@@ -232,6 +237,24 @@ def _verify_huggingface() -> Tuple[bool, str]:
         if "503" in msg or "loading" in msg.lower():
             return False, "Hugging Face: modelo temporariamente a carregar. Tenta novamente em instantes."
         return False, f"Hugging Face: {msg[:200]}"
+    except Exception as e:
+        return False, f"Hugging Face: {e}"
+
+
+def _verify_nvidia_image() -> Tuple[bool, str]:
+    api_key = get_nvidia_api_key()
+    if not api_key:
+        return False, "NVIDIA Imagem: preenche NVIDIA_API_KEY."
+    model = get_nvidia_image_model()
+    try:
+        from instagram_poster.providers.provider_nvidia import NVIDIAProvider
+        provider = NVIDIAProvider()
+        # Testar com prompt simples e curto
+        provider.generate("a small green square")
+        return True, f"NVIDIA Imagem: OK ({model})"
+    except Exception as e:
+        msg = str(e)[:120]
+        return False, f"NVIDIA Imagem falhou: {msg}"
 
 
 def verify_image_provider() -> Tuple[bool, str]:
@@ -251,6 +274,8 @@ def verify_image_provider() -> Tuple[bool, str]:
         if get_firefly_client_id() and get_firefly_client_secret():
             return True, "Firefly: credenciais definidas (testa ao gerar uma imagem)."
         return False, "Firefly: preenche FIREFLY_CLIENT_ID e FIREFLY_CLIENT_SECRET."
+    if provider == "nvidia":
+        return _verify_nvidia_image()
     return False, f"Provedor desconhecido: {provider}"
 
 
@@ -304,14 +329,60 @@ def verify_cloudinary() -> Tuple[bool, str]:
         return False, f"Cloudinary: {e}"
 
 
+def verify_text_provider() -> Tuple[bool, str]:
+    """Testa o provedor de texto configurado (NVIDIA ou Pollinations). Rezolve avisos de lint."""
+    provider = get_text_provider()
+    
+    if provider == "pollinations":
+        return True, "Pollinations (Texto): OK (grátis/rate-limit)"
+    elif provider == "nvidia_kimi":
+        api_key = get_nvidia_api_key()
+        if not api_key:
+            return False, "Texto NVIDIA Kimi: Falta preencher a API Key"
+        try:
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": "moonshotai/kimi-k2.5",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 10,
+                "stream": True
+            }
+            resp = requests.post(url, headers=headers, json=payload, timeout=60, stream=True)
+            resp.raise_for_status()
+            # Se chegamos aqui e recebemos o íncio do stream, a key é válida
+            return True, "Texto NVIDIA Kimi: OK (Ligação estabelecida)"
+        except Exception as e:
+            msg = str(e)[:150]
+            if "401" in msg or "invalid" in msg.lower():
+                return False, "Texto NVIDIA Kimi: API key inválida."
+            return False, f"Texto NVIDIA Kimi falhou: {msg}"
+    return False, f"Provedor de texto desconhecido: {provider}"
+
+
+def verify_video_provider() -> Tuple[bool, str]:
+    """Testa o provedor de vídeo (NVIDIA ou Pollinations)."""
+    provider = get_video_provider()
+    if provider == "pollinations":
+        return True, "Pollinations (Vídeo): OK (requer API Key para uso estável)"
+    if provider == "nvidia":
+        api_key = get_nvidia_api_key()
+        if not api_key:
+            return False, "NVIDIA Vídeo: preenche NVIDIA_API_KEY."
+        return True, f"NVIDIA Vídeo: Configurado ({get_nvidia_video_model()})"
+    return False, f"Provedor de vídeo desconhecido: {provider}"
+
+
 def verify_all_connections() -> List[Tuple[str, bool, str]]:
     """
     Executa todas as verificações de ligação e devolve lista de (nome, ok, mensagem).
-    Ordem: Google Sheets, Instagram, Imagens, Media (Cloudinary ou local).
+    Ordem: Google Sheets, Instagram, Imagens, Vídeo IA, Texto (IA), Media.
     """
     results: List[Tuple[str, bool, str]] = []
     results.append(("Google Sheets", *verify_google_sheets()))
     results.append(("Instagram", *verify_instagram()))
     results.append(("Imagens", *verify_image_provider()))
+    results.append(("Vídeo IA", *verify_video_provider()))
+    results.append(("Texto IA", *verify_text_provider()))
     results.append(("Media", *verify_cloudinary()))
     return results

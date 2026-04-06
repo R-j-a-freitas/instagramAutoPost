@@ -16,9 +16,9 @@ from instagram_poster.config import (
     get_content_extra_prompt,
     get_content_system_prompt_override,
     get_default_content_system_prompt,
-    get_pollinations_api_key,
 )
 from instagram_poster.sheets_client import append_rows, get_last_date
+from instagram_poster.text_generator import generate_text
 
 logger = logging.getLogger(__name__)
 
@@ -31,39 +31,17 @@ def _get_system_prompt() -> str:
 
 def _generate_content(
     n: int,
-    api_key: str,
     extra_prompt: Optional[str] = None,
 ) -> list[dict]:
-    """Chama a API de texto do Pollinations para gerar N posts."""
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
+    """Usa a IA configurada (Pollinations/Kimi) para gerar N posts."""
     system_prompt = _get_system_prompt()
     user_base = f"Generate {n} new content rows as a JSON object with key 'posts' containing an array. Use 'YYYY-MM-DD' for Date. Make all {n} posts with varied micro-themes."
     extra = (extra_prompt or "").strip() or (get_content_extra_prompt() or "").strip()
     if extra:
         user_base += f" Current focus or themes to incorporate in this batch: {extra}"
 
-    payload = {
-        "model": "openai",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_base},
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    content = generate_text(system_prompt=system_prompt, user_prompt=user_base, json_mode=True)
 
-    resp = requests.post(
-        "https://gen.pollinations.ai/v1/chat/completions",
-        headers=headers,
-        json=payload,
-        timeout=180,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-
-    content = data["choices"][0]["message"]["content"]
     parsed = json.loads(content)
     posts = parsed.get("posts", parsed.get("rows", []))
     if isinstance(posts, dict):
@@ -142,15 +120,11 @@ focus_this_run = st.text_input(
     help="Sobrescreve apenas para esta execução o foco guardado em Configuração.",
 )
 
-api_key = get_pollinations_api_key()
-if not api_key:
-    st.warning("Configura a POLLINATIONS_API_KEY na pagina Configuracao para usar a geracao de conteudo.")
-
-if st.button("Gerar conteudo", type="primary", disabled=not api_key):
+if st.button("Gerar conteudo", type="primary"):
     with st.spinner(f"A gerar {n_posts} posts com IA... (pode demorar 30-60s)"):
         try:
             extra = (focus_this_run or "").strip() or None
-            posts = _generate_content(n_posts, api_key, extra_prompt=extra)
+            posts = _generate_content(n_posts, extra_prompt=extra)
             if not posts:
                 st.error("A IA nao devolveu posts. Tenta novamente.")
             else:

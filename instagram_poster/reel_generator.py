@@ -64,8 +64,11 @@ def mix_video_with_audio(video_bytes: bytes, audio_path: str, audio_volume: floa
         audio = AudioFileClip(audio_path)
         audio = audio.with_effects([afx.MultiplyVolume(audio_volume)])
         
+        logger.info("mix_video_with_audio: video duration=%.2fs, audio duration=%.2fs", video.duration, audio.duration)
+        
         if audio.duration < video.duration:
             loops = int(video.duration / audio.duration) + 1
+            logger.debug("mix_video_with_audio: looping audio %d times", loops)
             audio = concatenate_audioclips([audio] * loops)
         
         audio = audio.subclipped(0, video.duration)
@@ -78,11 +81,12 @@ def mix_video_with_audio(video_bytes: bytes, audio_path: str, audio_volume: floa
         try:
             video.write_videofile(
                 res_path,
-                fps=30,
+                fps=video.fps or 30,
                 codec="libx264",
                 audio_codec="aac",
                 logger=None
             )
+            logger.info("mix_video_with_audio: success, result saved to %s", res_path)
             with open(res_path, "rb") as f:
                 return f.read()
         finally:
@@ -111,8 +115,14 @@ def repeat_video(video_bytes: bytes, loops: int) -> bytes:
 
     try:
         clip = VideoFileClip(v_tmp_path)
+        orig_duration = clip.duration
+        logger.info("repeat_video: original duration=%.2fs, loops=%d", orig_duration, loops)
+        
         clips = [clip] * loops
-        final_video = concatenate_videoclips(clips, method="compose")
+        # 'chain' é melhor para clips idênticos e mais rápido
+        final_video = concatenate_videoclips(clips, method="chain")
+        new_duration = final_video.duration
+        logger.info("repeat_video: new duration=%.2fs", new_duration)
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as res_tmp:
             res_path = res_tmp.name
@@ -120,7 +130,7 @@ def repeat_video(video_bytes: bytes, loops: int) -> bytes:
         try:
             final_video.write_videofile(
                 res_path,
-                fps=30,
+                fps=clip.fps or 30,
                 codec="libx264",
                 audio_codec="aac",
                 logger=None
@@ -262,30 +272,25 @@ def generate_caption_for_posts(posts: list[dict[str, Any]]) -> str:
     Gera uma caption que resume os posts (via Pollinations). Se falhar, devolve texto fallback.
     """
     if not posts:
-        return "Resumo dos nossos últimos posts. #keepcalm"
+        return "Highlights from our recent posts. #keepcalmnbepositive"
     quotes = [str(p.get("image_text") or "").strip() for p in posts if p.get("image_text")]
     if not quotes:
-        return "Resumo dos nossos últimos posts. #keepcalm"
-    api_key = get_pollinations_api_key()
-    if not api_key:
-        return "Resumo dos nossos últimos posts. #keepcalmnbepositive"
+        return "Our latest highlights. #keepcalmnbepositive"
+    from instagram_poster.config import get_text_provider
+    provider = get_text_provider()
+    
+    # Prompt ajustado para pedir a summary
     prompt = (
         f"Write a short Instagram caption (2-4 sentences) that summarizes these quotes as one theme: "
         f"{' | '.join(quotes[:5])}. Tone: calm, positive. End with 1-2 hashtags like #keepcalmnbepositive."
     )
     try:
-        resp = requests.post(
-            "https://gen.pollinations.ai/v1/chat/completions",
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-            json={"model": "openai", "messages": [{"role": "user", "content": prompt}]},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        text = resp.json()["choices"][0]["message"]["content"].strip()
-        return text or "Resumo dos nossos últimos posts. #keepcalmnbepositive"
+        from instagram_poster.text_generator import generate_text
+        text = generate_text(system_prompt="You are an Instagram expert. Write captions in English.", user_prompt=prompt, json_mode=False)
+        return text.strip() or "Highlights from our recent posts. #keepcalmnbepositive"
     except Exception as e:
         logger.warning("Caption IA falhou: %s", e)
-        return "Resumo dos nossos últimos posts. #keepcalmnbepositive"
+        return "Our latest highlights. #keepcalmnbepositive"
 
 
 def _download_image(url: str) -> bytes:

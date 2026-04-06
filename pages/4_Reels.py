@@ -185,7 +185,7 @@ if st.button("Gerar Reel", type="primary", key="reel_generate"):
 if st.session_state.reel_video_bytes:
     st.video(st.session_state.reel_video_bytes)
     if st.button("Publicar no Instagram", type="primary", key="reel_publish"):
-        caption = (st.session_state.get("reel_caption_ta") or st.session_state.get("reel_caption") or "").strip() or "Reel gerado automaticamente."
+        caption = (st.session_state.get("reel_caption_ta") or st.session_state.get("reel_caption") or "").strip() or "Automated Reel highlights. #keepcalmnbepositive"
         with st.spinner("Upload para Cloudinary e publicação no Instagram (pode demorar 1-3 min)..."):
             try:
                 video_url = upload_video_bytes(st.session_state.reel_video_bytes)
