@@ -96,4 +96,3 @@ st.caption(
     "Os IDs são guardados em ficheiro e verificados na API para evitar duplicados. "
     "Se limpares o cache, o sistema volta a verificar todos os comentários mas só responde aos que ainda não têm resposta na API."
 )
-
