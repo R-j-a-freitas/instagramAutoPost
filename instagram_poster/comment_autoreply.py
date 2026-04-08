@@ -190,7 +190,8 @@ def _run_autoreply_impl(message: str, max_media: int, delay_seconds: float, use_
                 continue
             
             # Preparar resposta
-            username = str(comment.get("username", "?"))
+            username = comment.get("username") or (comment.get("from") or {}).get("username") or "?"
+            username = str(username)
             comment_text = str(comment.get("text") or "")
             
             if use_ai:
