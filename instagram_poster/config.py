@@ -448,5 +448,11 @@ def get_autopublish_comment_autoreply() -> bool:
     return val.lower() in ("true", "1", "yes", "on")
 
 
+def get_autopublish_ai_comment_reply() -> bool:
+    """Verifica se deve usar IA (Pollinations) para as respostas."""
+    val = get_runtime_override("AUTOPUBLISH_AI_COMMENT_REPLY") or os.getenv("AUTOPUBLISH_AI_COMMENT_REPLY") or "false"
+    return val.lower() in ("true", "1", "yes", "on")
+
+
 # --- Ambiente ---
 ENV: str = _optional("ENV", "dev")

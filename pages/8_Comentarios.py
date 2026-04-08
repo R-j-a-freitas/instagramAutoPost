@@ -41,11 +41,13 @@ st.caption(
 from instagram_poster.comment_autoreply import run_autoreply, get_replied_count, reset_replied_ids
 
 st.subheader("Configuração")
+use_ai = st.toggle("Usar IA para as respostas (Pollinations)", value=False, help="Se ativo, ignora a mensagem abaixo e usa IA para gerar uma resposta personalizada Mentionando o utilizador.")
 msg = st.text_input(
-    "Mensagem de agradecimento",
+    "Mensagem de agradecimento (fallback/estática)",
     value="🙏",
     max_chars=300,
-    help="Emoji ou texto a enviar como resposta (ex.: 🙏, 🙏 Obrigado!, 👏)",
+    help="Emoji ou texto a enviar como resposta se a IA estiver desligada.",
+    disabled=use_ai
 )
 max_media = st.slider("Número de posts a verificar", min_value=5, max_value=25, value=10)
 delay = st.number_input("Pausa entre respostas (segundos)", min_value=0.0, max_value=10.0, value=2.0, step=0.5)
@@ -53,7 +55,7 @@ delay = st.number_input("Pausa entre respostas (segundos)", min_value=0.0, max_v
 if st.button("Executar autoresposta agora", type="primary", key="run_autoreply"):
     try:
         with st.spinner("A processar comentários..."):
-            result = run_autoreply(message=msg or "🙏", max_media=max_media, delay_seconds=delay)
+            result = run_autoreply(message=msg or "🙏", max_media=max_media, delay_seconds=delay, use_ai=use_ai)
         for item in result.get("replied_items", []):
             from instagram_poster import autopublish
             autopublish.log_comment_reply(

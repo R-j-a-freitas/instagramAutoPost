@@ -265,6 +265,23 @@ def get_media_ids(limit: int = 25) -> list[str]:
     return [x["id"] for x in items if x.get("id")]
 
 
+def get_media_caption(media_id: str) -> str:
+    """
+    Obtém a legenda (caption) de um media específico.
+    GET /{media-id}?fields=caption
+    """
+    _check_config()
+    url = _url(f"/{media_id}")
+    params = {"fields": "caption", "access_token": get_ig_access_token()}
+    try:
+        resp = requests.get(url, params=params, timeout=20)
+        resp.raise_for_status()
+        return resp.json().get("caption") or ""
+    except Exception as e:
+        logger.warning("Falha ao obter legenda do media %s: %s", media_id, e)
+        return ""
+
+
 def get_comment_replies(comment_id: str) -> list[dict]:
     """
     Obtém as replies de um comentário específico (verificação final antes de responder).

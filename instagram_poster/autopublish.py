@@ -715,10 +715,11 @@ def _loop(interval_minutes: int):
         except Exception:
             logger.exception("Autopublish: erro ao tentar Story reuse agendada")
         try:
-            from instagram_poster.config import get_autopublish_comment_autoreply
+            from instagram_poster.config import get_autopublish_comment_autoreply, get_autopublish_ai_comment_reply
             if get_autopublish_comment_autoreply():
                 from instagram_poster.comment_autoreply import run_autoreply
-                result = run_autoreply(message="🙏", max_media=5, delay_seconds=1.0)
+                use_ai = get_autopublish_ai_comment_reply()
+                result = run_autoreply(message="🙏", max_media=5, delay_seconds=1.0, use_ai=use_ai)
                 for item in result.get("replied_items", []):
                     log_comment_reply(
                         username=item.get("username", "?"),

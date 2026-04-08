@@ -1,8 +1,7 @@
 """
 Autoresposta a comentários nos posts do Instagram.
-Responde com emoji de agradecimento (ex.: 🙏) aos comentários que ainda não têm resposta nossa.
+Suporta mensagens estáticas e IA (Pollinations) para respostas personalizadas.
 GARANTIA: Uma única resposta por comentário — ficheiro JSON com lock, limite por execução, filtro de replies.
-Nota: A API do Instagram não permite dar like em comentários.
 """
 import fcntl
 import json
@@ -11,17 +10,32 @@ import re
 import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-from instagram_poster.ig_client import get_comments, get_media_ids, get_my_id, reply_to_comment
+from instagram_poster.ig_client import (
+    get_comments,
+    get_media_ids,
+    get_my_id,
+    reply_to_comment,
+    get_media_caption,
+)
+from instagram_poster.text_generator import generate_text
 
 logger = logging.getLogger(__name__)
 
 _REPLIED_FILE = Path(__file__).resolve().parent.parent / ".comment_autoreply_replied.json"
 _LOCK_FILE = Path(__file__).resolve().parent.parent / ".comment_autoreply.lock"
-_LAST_RUN_FILE = Path(__file__).resolve().parent.parent / ".comment_autoreply_last_run.json"
-_DEFAULT_MESSAGE = "🙏"
-_MAX_REPLIES_PER_RUN = 15
 _ID_CACHE: dict[str, str] = {}
+
+# Prompt de sistema para garantir o tom do canal @keepcalmnbepositive
+_AI_REPLY_SYSTEM_PROMPT = """
+You are @keepcalmnbepositive on Instagram. Your tone is calm, encouraging, and kind.
+Niche: personal development, mindset, self-compassion, slow growth.
+Goal: Respond to user comments in a friendly and professional way, always starting with their @username.
+The response should be in the SAME LANGUAGE as the comment (usually English or Portuguese).
+Maximum 2 short sentences. Be authentic and genuinely helpful or appreciative. 
+No toxic positivity. No hashtags.
+"""
 
 
 def _get_all_my_ids() -> set[str]:
@@ -73,42 +87,59 @@ def _we_already_replied_to_comment(comment: dict) -> bool:
     cid = re.sub(r"\D", "", str(comment.get("id", "")))
     if not cid: return True
     
-    # 1. Check local file (memória persistente)
     if cid in _load_replied_ids_set():
         return True
     
-    # 2. Check API replies (qualquer resposta existente bloqueia nova autoreply)
     replies_obj = comment.get("replies") or {}
     reply_list = replies_obj.get("data") or [] if isinstance(replies_obj, dict) else []
     
     if reply_list:
-        # Se já existir qualquer resposta (nossa ou de outros), não duplicamos a autoreply.
-        logger.info("Comentário %s já tem respostas no Instagram. A transitar para skip.", cid)
+        logger.info("Comentário %s já tem respostas no Instagram. Skip.", cid)
         return True
     
     return False
+
+
+def _generate_ai_reply(username: str, comment_text: str, post_caption: str) -> str:
+    """Gera uma resposta via IA (Pollinations) baseada no comentário e contexto do post."""
+    user_prompt = (
+        f"Context (Original Post Caption): \"{post_caption}\"\n"
+        f"User @{username} commented: \"{comment_text}\"\n\n"
+        f"Generate a kind and brief reply starting with @{username}:"
+    )
+    try:
+        reply = generate_text(_AI_REPLY_SYSTEM_PROMPT, user_prompt)
+        reply = reply.strip()
+        # Garantir que começa com @username se o AI se esqueceu
+        if not reply.startswith(f"@{username}"):
+            reply = f"@{username} {reply}"
+        # Truncar se for demasiado longo para a API (300 chars é o limite do params, mas vamos ser seguros)
+        return reply[:280]
+    except Exception as e:
+        logger.warning("Falha ao gerar resposta IA para @%s: %s", username, e)
+        return f"@{username} 🙏"
 
 
 def run_autoreply(
     message: str = "🙏",
     max_media: int = 10,
     delay_seconds: float = 2.0,
+    use_ai: bool = False,
 ) -> dict:
-    # Lock global para evitar que UI e Background corram ao mesmo tempo
     lock_fd = open(_LOCK_FILE, "w")
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        return {"replied": 0, "skipped": 0, "errors": ["Outra instância da autoresposta já está a correr."], "log": ["Ocupado."], "replied_items": [], "media_count": 0, "comments_total": 0}
+        return {"replied": 0, "skipped": 0, "errors": ["Outra instância a correr."], "log": ["Ocupado."], "replied_items": [], "media_count": 0, "comments_total": 0}
 
     try:
-        return _run_autoreply_impl(message, max_media, delay_seconds)
+        return _run_autoreply_impl(message, max_media, delay_seconds, use_ai)
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
 
 
-def _run_autoreply_impl(message: str, max_media: int, delay_seconds: float) -> dict:
+def _run_autoreply_impl(message: str, max_media: int, delay_seconds: float, use_ai: bool) -> dict:
     replied_count = 0
     skipped_count = 0
     errors: list[str] = []
@@ -124,9 +155,15 @@ def _run_autoreply_impl(message: str, max_media: int, delay_seconds: float) -> d
 
     processed_ids: set[str] = set()
     replied_ids = _load_replied_ids_set()
+    my_ids = _get_all_my_ids()
 
     for media_id in media_ids:
         if replied_count >= 15: break
+        
+        post_caption = ""
+        if use_ai:
+            post_caption = get_media_caption(media_id)
+
         try:
             comments = get_comments(media_id)
         except Exception: continue
@@ -138,16 +175,13 @@ def _run_autoreply_impl(message: str, max_media: int, delay_seconds: float) -> d
             if not cid or cid in processed_ids: continue
             processed_ids.add(cid)
 
-            # Filtros
             if bool(comment.get("parent_id") or comment.get("parent")): continue
             
-            # Check if it is from us
             author_id = str((comment.get("from") or {}).get("id") or "")
-            if author_id in _get_all_my_ids(): 
+            if author_id in my_ids: 
                 skipped_count += 1
                 continue
             
-            # Check if we already replied (File + API)
             if cid in replied_ids or _we_already_replied_to_comment(comment):
                 if cid not in replied_ids:
                     replied_ids.add(cid)
@@ -155,23 +189,32 @@ def _run_autoreply_impl(message: str, max_media: int, delay_seconds: float) -> d
                 skipped_count += 1
                 continue
             
-            # Respond
+            # Preparar resposta
+            username = str(comment.get("username", "?"))
+            comment_text = str(comment.get("text") or "")
+            
+            if use_ai:
+                final_msg = _generate_ai_reply(username, comment_text, post_caption)
+            else:
+                # Comportamento padrão: @username + emoji/msg
+                final_msg = f"@{username} {message}" if not message.startswith("@") else message
+
             try:
-                reply_to_comment(cid_raw, message)
+                reply_to_comment(cid_raw, final_msg)
                 replied_count += 1
                 replied_ids.add(cid)
                 _save_replied_ids(replied_ids)
-                replied_items.append({"username": str(comment.get("username", "?")), "comment_id": cid})
-                log.append(f"  ✓ Respondido: @{comment.get('username')}")
+                replied_items.append({"username": username, "comment_id": cid, "message": final_msg})
+                log.append(f"  ✓ @{username}: {final_msg[:30]}...")
                 if delay_seconds > 0: _time.sleep(delay_seconds)
             except Exception as e:
-                errors.append(f"Erro no comentário {cid}: {e}")
+                errors.append(f"Erro @{username}: {e}")
 
     return {
         "replied": replied_count,
         "skipped": skipped_count,
         "errors": errors,
-        "log": log or ["Nenhum comentário novo."],
+        "log": log or ["Nada novo."],
         "replied_items": replied_items,
         "media_count": len(media_ids),
         "comments_total": len(processed_ids),
