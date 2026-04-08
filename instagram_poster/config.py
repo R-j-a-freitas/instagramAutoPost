@@ -56,15 +56,39 @@ def get_ig_sheet_id() -> str:
 # Credenciais Google em memória (ex.: carregadas por upload do JSON na UI)
 _runtime_google_credentials: Optional[dict[str, Any]] = None
 # Overrides em runtime (ex.: preenchidos na UI Streamlit)
+_CONFIG_OVERRIDE_FILE = _env_root / ".config_overrides.json"
 _runtime_overrides: dict[str, str] = {}
 
 
+def _load_overrides():
+    global _runtime_overrides
+    if _CONFIG_OVERRIDE_FILE.exists():
+        try:
+            data = json.loads(_CONFIG_OVERRIDE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                _runtime_overrides.update({str(k): str(v) for k, v in data.items()})
+        except Exception:
+            pass
+
+
+def _save_overrides():
+    try:
+        _CONFIG_OVERRIDE_FILE.write_text(json.dumps(_runtime_overrides, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+import json  # Certificar que json está disponível
+_load_overrides()
+
+
 def set_runtime_override(key: str, value: str) -> None:
-    """Define um valor em runtime (ex.: campo preenchido na UI). Use chaves: IG_SHEET_ID, IG_BUSINESS_ID, IG_ACCESS_TOKEN, GEMINI_API_KEY, NVIDIA_API_KEY, etc."""
+    """Define um valor em runtime e persiste em ficheiro."""
     if value is not None and str(value).strip():
         _runtime_overrides[key] = str(value).strip()
     elif key in _runtime_overrides:
         del _runtime_overrides[key]
+    _save_overrides()
 
 
 def get_runtime_override(key: str) -> Optional[str]:

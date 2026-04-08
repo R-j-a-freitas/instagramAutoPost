@@ -39,9 +39,21 @@ st.caption(
 )
 
 from instagram_poster.comment_autoreply import run_autoreply, get_replied_count, reset_replied_ids
+from instagram_poster.config import get_autopublish_ai_comment_reply, set_runtime_override
 
 st.subheader("Configuração")
-use_ai = st.toggle("Usar IA para as respostas (Pollinations)", value=False, help="Se ativo, ignora a mensagem abaixo e usa IA para gerar uma resposta personalizada Mentionando o utilizador.")
+# Carregar estado persistente
+current_ai_state = get_autopublish_ai_comment_reply()
+use_ai = st.toggle(
+    "Usar IA para as respostas (Pollinations)", 
+    value=current_ai_state, 
+    help="Se ativo, o sistema usa IA para gerar respostas personalizadas. Este ajuste é persistente."
+)
+
+# Se o estado mudou na UI, persistir no ficheiro
+if use_ai != current_ai_state:
+    set_runtime_override("AUTOPUBLISH_AI_COMMENT_REPLY", "true" if use_ai else "false")
+    st.rerun()
 msg = st.text_input(
     "Mensagem de agradecimento (fallback/estática)",
     value="🙏",

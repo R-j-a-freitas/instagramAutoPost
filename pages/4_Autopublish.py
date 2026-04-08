@@ -143,12 +143,22 @@ ap_comment_autoreply = st.toggle(
     help="Em cada ciclo do autopublish, responde aos comentários nos teus posts com 🙏 (emoji de agradecimento).",
 )
 
+from instagram_poster.config import get_autopublish_ai_comment_reply
+_ap_ai_reply = get_autopublish_ai_comment_reply()
+ap_ai_reply = st.toggle(
+    "Usar IA para as respostas (Pollinations)",
+    value=_ap_ai_reply,
+    key="ap_menu_ai_reply",
+    help="Se activo, usa IA para gerar respostas em Inglês Mentionando o utilizador.",
+    disabled=not ap_comment_autoreply
+)
+
 # Guardar alteracoes no .env
 ap_story_reuse_interval = max(30, int(ap_story_reuse_interval_hours * 60))
 ap_reel_reuse_interval = max(30, int(ap_reel_reuse_interval_hours * 60))
 if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_story or ap_story_music != _ap_story_music or ap_story_reuse != _ap_story_reuse or ap_story_reuse_interval != _ap_story_reuse_interval
         or ap_reel != _ap_reel or ap_reel_reuse != _ap_reel_reuse or ap_reel_reuse_interval != _ap_reel_reuse_interval
-        or ap_comment_autoreply != _ap_comment_autoreply):
+        or ap_comment_autoreply != _ap_comment_autoreply or ap_ai_reply != _ap_ai_reply):
     update_env_vars({
         "AUTOPUBLISH_ENABLED": "true" if ap_enabled else "false",
         "AUTOPUBLISH_INTERVAL_MINUTES": str(ap_interval),
@@ -159,10 +169,20 @@ if (ap_enabled != _ap_enabled or ap_interval != _ap_interval or ap_story != _ap_
         "AUTOPUBLISH_REEL_EVERY_5": "true" if ap_reel else "false",
         "AUTOPUBLISH_REEL_REUSE_SCHEDULE": "true" if ap_reel_reuse else "false",
         "AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES": str(ap_reel_reuse_interval),
+        "AUTOPUBLISH_COMMENT_AUTOREPLY": "true" if ap_comment_autoreply else "false",
+        "AUTOPUBLISH_AI_COMMENT_REPLY": "true" if ap_ai_reply else "false",
     })
     config.set_runtime_override("AUTOPUBLISH_ENABLED", "true" if ap_enabled else "false")
     config.set_runtime_override("AUTOPUBLISH_INTERVAL_MINUTES", str(ap_interval))
     config.set_runtime_override("AUTOPUBLISH_STORY_WITH_POST", "true" if ap_story else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_WITH_MUSIC", "true" if ap_story_music else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "true" if ap_story_reuse else "false")
+    config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", str(ap_story_reuse_interval))
+    config.set_runtime_override("AUTOPUBLISH_REEL_EVERY_5", "true" if ap_reel else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "true" if ap_reel_reuse else "false")
+    config.set_runtime_override("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", str(ap_reel_reuse_interval))
+    config.set_runtime_override("AUTOPUBLISH_COMMENT_AUTOREPLY", "true" if ap_comment_autoreply else "false")
+    config.set_runtime_override("AUTOPUBLISH_AI_COMMENT_REPLY", "true" if ap_ai_reply else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_WITH_MUSIC", "true" if ap_story_music else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_SCHEDULE", "true" if ap_story_reuse else "false")
     config.set_runtime_override("AUTOPUBLISH_STORY_REUSE_INTERVAL_MINUTES", str(ap_story_reuse_interval))
