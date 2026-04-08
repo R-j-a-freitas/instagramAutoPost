@@ -44,6 +44,8 @@ from instagram_poster.config import (
     get_autopublish_story_reuse_schedule_enabled,
     get_autopublish_story_with_music,
     get_autopublish_story_with_post,
+    get_autopublish_ai_comment_reply,
+    set_runtime_override,
 )
 from instagram_poster.env_utils import update_env_vars
 
@@ -143,7 +145,7 @@ ap_comment_autoreply = st.toggle(
     help="Em cada ciclo do autopublish, responde aos comentários nos teus posts com 🙏 (emoji de agradecimento).",
 )
 
-from instagram_poster.config import get_autopublish_ai_comment_reply
+
 _ap_ai_reply = get_autopublish_ai_comment_reply()
 ap_ai_reply = st.toggle(
     "Usar IA para as respostas (Pollinations)",

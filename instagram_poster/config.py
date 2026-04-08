@@ -5,6 +5,7 @@ Suporta credenciais Google em memória (ex.: upload do JSON na UI Streamlit).
 """
 import os
 import socket
+import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -34,27 +35,6 @@ def _optional(key: str, default: str = "") -> str:
     return (os.getenv(key) or default).strip()
 
 
-# --- Google Sheets ---
-# OAuth (prioridade): client_id e client_secret para fluxo "Ligar com Google"
-GOOGLE_OAUTH_CLIENT_ID: str = _optional("GOOGLE_OAUTH_CLIENT_ID", "")
-GOOGLE_OAUTH_CLIENT_SECRET: str = _optional("GOOGLE_OAUTH_CLIENT_SECRET", "")
-# Fallback: caminho para o ficheiro JSON da service account
-GOOGLE_SERVICE_ACCOUNT_JSON: str = _optional("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-# Fallback legado
-GOOGLE_CREDENTIALS_PATH: str = _optional("GOOGLE_CREDENTIALS_PATH", "")
-# ID do Google Sheet (ex.: 1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig)
-IG_SHEET_ID: str = _optional("IG_SHEET_ID", "1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig")
-# Nome do separador/aba (ex.: Folha1)
-SHEET_TAB_NAME: str = _optional("SHEET_TAB_NAME", "Folha1")
-
-
-def get_ig_sheet_id() -> str:
-    """ID do Sheet (env ou override da UI)."""
-    return get_runtime_override("IG_SHEET_ID") or IG_SHEET_ID
-
-
-# Credenciais Google em memória (ex.: carregadas por upload do JSON na UI)
-_runtime_google_credentials: Optional[dict[str, Any]] = None
 # Overrides em runtime (ex.: preenchidos na UI Streamlit)
 _CONFIG_OVERRIDE_FILE = _env_root / ".config_overrides.json"
 _runtime_overrides: dict[str, str] = {}
@@ -78,7 +58,6 @@ def _save_overrides():
         pass
 
 
-import json  # Certificar que json está disponível
 _load_overrides()
 
 
@@ -86,13 +65,36 @@ def set_runtime_override(key: str, value: str) -> None:
     """Define um valor em runtime e persiste em ficheiro."""
     if value is not None and str(value).strip():
         _runtime_overrides[key] = str(value).strip()
-    elif key in _runtime_overrides:
-        del _runtime_overrides[key]
+    else:
+        _runtime_overrides.pop(key, None)
     _save_overrides()
 
 
 def get_runtime_override(key: str) -> Optional[str]:
     return _runtime_overrides.get(key)
+
+
+# --- Google Sheets ---
+# OAuth (prioridade): client_id e client_secret para fluxo "Ligar com Google"
+GOOGLE_OAUTH_CLIENT_ID: str = _optional("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET: str = _optional("GOOGLE_OAUTH_CLIENT_SECRET", "")
+# Fallback: caminho para o ficheiro JSON da service account
+GOOGLE_SERVICE_ACCOUNT_JSON: str = _optional("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+# Fallback legado
+GOOGLE_CREDENTIALS_PATH: str = _optional("GOOGLE_CREDENTIALS_PATH", "")
+# ID do Google Sheet (ex.: 1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig)
+IG_SHEET_ID: str = _optional("IG_SHEET_ID", "1UBdukuHNvpfdcyBxKIQAt5pRIKFrGLYI6tZdYhfYCig")
+# Nome do separador/aba (ex.: Folha1)
+SHEET_TAB_NAME: str = _optional("SHEET_TAB_NAME", "Folha1")
+
+
+def get_ig_sheet_id() -> str:
+    """ID do Sheet (env ou override da UI)."""
+    return get_runtime_override("IG_SHEET_ID") or IG_SHEET_ID
+
+
+# Credenciais Google em memória (ex.: carregadas por upload do JSON na UI)
+_runtime_google_credentials: Optional[dict[str, Any]] = None
 
 
 def get_google_oauth_client_id() -> str:
