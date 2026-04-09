@@ -20,6 +20,7 @@ _DEFAULT_PARAMS = {
 
 class PollinationsProvider:
     def generate(self, prompt: str) -> bytes:
+        import time
         api_key = get_pollinations_api_key()
 
         encoded_prompt = quote(prompt, safe="")
@@ -30,18 +31,29 @@ class PollinationsProvider:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        logger.info("Pollinations: a gerar imagem (modelo flux)...")
-        resp = requests.get(url, params=params, headers=headers, timeout=90)
-        resp.raise_for_status()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info("Pollinations: a gerar imagem (modelo flux)... (tentativa %d/%d)", attempt + 1, max_retries)
+                resp = requests.get(url, params=params, headers=headers, timeout=90)
+                resp.raise_for_status()
 
-        content_type = resp.headers.get("content-type", "")
-        if "image" not in content_type and len(resp.content) < 1000:
-            raise ValueError(
-                f"Pollinations não devolveu uma imagem (content-type: {content_type})"
-            )
+                content_type = resp.headers.get("content-type", "")
+                if "image" not in content_type and len(resp.content) < 1000:
+                    raise ValueError(f"Pollinations não devolveu uma imagem (content-type: {content_type})")
 
-        logger.info("Pollinations: imagem gerada (%d bytes)", len(resp.content))
-        return resp.content
+                logger.info("Pollinations: imagem gerada (%d bytes)", len(resp.content))
+                return resp.content
+
+            except requests.exceptions.RequestException as e:
+                status_code = getattr(e.response, "status_code", 500) if e is not None and hasattr(e, "response") else 500
+                if attempt == max_retries - 1 or (400 <= status_code < 500 and status_code not in (429,)):
+                    logger.error("Pollinations: falhou após %d tentativas (status %s): %s", max_retries, status_code, e)
+                    raise
+                logger.warning("Falha no Pollinations (status %s). A aguardar 5s...", status_code)
+                time.sleep(5)
+        
+        raise RuntimeError("Falha inesperada no retry loop do Pollinations.")
 
     def generate_video(self, prompt: str, model: str = "grok-video", aspect_ratio: str = "9:16", duration: int = 4) -> bytes:
         """
@@ -73,18 +85,38 @@ class PollinationsProvider:
         
         headers = {"Authorization": f"Bearer {api_key}"}
 
-        logger.info("Pollinations: a gerar vídeo (modelo %s, %s)...", model, aspect_ratio)
-        resp = requests.get(url, params=params, headers=headers, timeout=300)
-        
-        if not resp.ok:
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                error_data = resp.json()
-                msg = error_data.get("error", {}).get("message", resp.text)
-            except Exception:
-                msg = resp.text
-            # Se der 400, pode ser o modelo. Logar URL (sem key) para debug.
-            logger.error("Pollinations video error %d: %s. URL base: %s", resp.status_code, msg, url)
-            raise ValueError(f"Pollinations Video Error {resp.status_code}: {msg}")
+                logger.info("Pollinations: a gerar vídeo (modelo %s, %s)... (tentativa %d/%d)", model, aspect_ratio, attempt + 1, max_retries)
+                resp = requests.get(url, params=params, headers=headers, timeout=300)
+                
+                if not resp.ok:
+                    try:
+                        error_data = resp.json()
+                        msg = error_data.get("error", {}).get("message", resp.text)
+                    except Exception:
+                        msg = resp.text
+                    
+                    status_code = resp.status_code
+                    if attempt == max_retries - 1 or (400 <= status_code < 500 and status_code not in (429,)):
+                        logger.error("Pollinations video error %d: %s. URL base: %s", status_code, msg, url)
+                        raise ValueError(f"Pollinations Video Error {status_code}: {msg}")
+                    
+                    logger.warning("Falha no Pollinations Video (status %s). A aguardar 10s...", status_code)
+                    import time
+                    time.sleep(10)
+                    continue
+                
+                break # Success
+            except requests.exceptions.RequestException as e:
+                status_code = getattr(e.response, "status_code", 500) if e is not None and hasattr(e, "response") else 500
+                if attempt == max_retries - 1 or (400 <= status_code < 500 and status_code not in (429,)):
+                    logger.error("Pollinations video request exception: %s", e)
+                    raise
+                logger.warning("Excepção no Pollinations Video (status %s). Aguardar 10s...", status_code)
+                import time
+                time.sleep(10)
 
         content_type = resp.headers.get("content-type", "")
         if "video" not in content_type and len(resp.content) < 1000:
