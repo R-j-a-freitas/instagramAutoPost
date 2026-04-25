@@ -319,12 +319,20 @@ def _image_to_story_frame(image_bytes: bytes) -> bytes:
     # Fundo: imagem esticada para 1080x1920 e desfocada
     bg = img.resize((sw, sh), Image.Resampling.LANCZOS)
     bg = bg.filter(ImageFilter.GaussianBlur(radius=25))
-    # Quadrado central: redimensionar para 1080x1080 e colar ao centro
-    box_size = min(1080, w, h)
-    square = img.resize((box_size, box_size), Image.Resampling.LANCZOS)
-    x = (sw - square.width) // 2
-    y = (sh - square.height) // 2
-    bg.paste(square, (x, y))
+    # Imagem central: redimensionar para ocupar 1000px de largura (margem de 40px) mantendo a proporção
+    target_w = 1000
+    target_h = int(h * (target_w / w))
+    center_img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    
+    # Cantos arredondados na imagem central (opcional, mas fica melhor)
+    mask = Image.new("L", center_img.size, 0)
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle((0, 0, target_w, target_h), radius=40, fill=255)
+    
+    x = (sw - target_w) // 2
+    y = (sh - target_h) // 2
+    bg.paste(center_img, (x, y), mask)
     buf = io.BytesIO()
     bg.save(buf, format="JPEG", quality=95)
     return buf.getvalue()
@@ -358,11 +366,19 @@ def _image_to_vertical_frame_np(image_bytes: bytes) -> np.ndarray:
     sw, sh = 1080, 1920
     bg = img.resize((sw, sh), Image.Resampling.LANCZOS)
     bg = bg.filter(ImageFilter.GaussianBlur(radius=25))
-    box_size = min(1080, w, h)
-    square = img.resize((box_size, box_size), Image.Resampling.LANCZOS)
-    x = (sw - square.width) // 2
-    y = (sh - square.height) // 2
-    bg.paste(square, (x, y))
+    
+    target_w = 1000
+    target_h = int(h * (target_w / w))
+    center_img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    
+    mask = Image.new("L", center_img.size, 0)
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle((0, 0, target_w, target_h), radius=40, fill=255)
+    
+    x = (sw - target_w) // 2
+    y = (sh - target_h) // 2
+    bg.paste(center_img, (x, y), mask)
     return np.array(bg)
 
 

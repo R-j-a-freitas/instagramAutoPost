@@ -54,17 +54,28 @@ def create_media(image_url: str, caption: str) -> str:
     _check_config()
     ig_id = get_ig_business_id()
     url = _url(f"/{ig_id}/media")
-    params = {
+    token = get_ig_access_token()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    payload = {
         "image_url": image_url,
         "caption": caption,
-        "access_token": get_ig_access_token(),
     }
     logger.info("A criar media container para image_url=%s", image_url[:80] + "..." if len(image_url) > 80 else image_url)
-    resp = requests.post(url, params=params, timeout=30)
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
     try:
         resp.raise_for_status()
-    except requests.HTTPError:
-        logger.error("create_media falhou: status=%s body=%s", resp.status_code, resp.text)
+    except requests.HTTPError as e:
+        body = (resp.text or "")[:1000]
+        logger.error("create_media falhou: status=%s body=%s", resp.status_code, body)
+        if resp.status_code == 400:
+            try:
+                err = resp.json().get("error", {})
+                user_msg = err.get("error_user_msg") or err.get("message") or body
+                raise ValueError(f"Instagram Post: {user_msg}") from e
+            except ValueError:
+                raise
+            except Exception:
+                pass
         raise
     data = resp.json()
     creation_id = data.get("id")
@@ -134,18 +145,29 @@ def create_reel(video_url: str, caption: str) -> str:
     _check_config()
     ig_id = get_ig_business_id()
     url = _url(f"/{ig_id}/media")
-    params = {
+    token = get_ig_access_token()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    payload = {
         "media_type": "REELS",
         "video_url": video_url,
         "caption": caption,
-        "access_token": get_ig_access_token(),
     }
     logger.info("A criar Reel container para video_url=%s", video_url[:80] + "..." if len(video_url) > 80 else video_url)
-    resp = requests.post(url, params=params, timeout=30)
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
     try:
         resp.raise_for_status()
-    except requests.HTTPError:
-        logger.error("create_reel falhou: status=%s body=%s", resp.status_code, resp.text)
+    except requests.HTTPError as e:
+        body = (resp.text or "")[:1000]
+        logger.error("create_reel falhou: status=%s body=%s", resp.status_code, body)
+        if resp.status_code == 400:
+            try:
+                err = resp.json().get("error", {})
+                user_msg = err.get("error_user_msg") or err.get("message") or body
+                raise ValueError(f"Instagram Reel: {user_msg}") from e
+            except ValueError:
+                raise
+            except Exception:
+                pass
         raise
     data = resp.json()
     creation_id = data.get("id")
