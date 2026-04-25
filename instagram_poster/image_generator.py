@@ -388,6 +388,8 @@ def get_story_image_url_from_feed_image(feed_image_url: str) -> str:
         raise ValueError("URL da imagem do post está vazio.")
     logger.info("A gerar imagem Story a partir do post: %s", feed_image_url[:80])
     image_bytes = _download_image(feed_image_url.strip())
+    # Normalizar para 1080x1080 antes de converter em frame de Story
+    image_bytes = _normalize_to_feed_size(image_bytes)
     story_bytes = _image_to_story_frame(image_bytes)
     return upload_image_bytes(story_bytes, public_id_prefix="ig_story")
 
@@ -445,8 +447,11 @@ def get_story_video_url_from_feed_image(
 
     logger.info("A gerar vídeo Story com música a partir do post: %s", feed_image_url[:80])
     image_bytes = _download_image(feed_image_url.strip())
+    # Normalizar para 1080x1080 antes de converter em frame de Story
+    image_bytes = _normalize_to_feed_size(image_bytes)
     frame = _image_to_vertical_frame_np(image_bytes)
-    clip = ImageClip(frame, duration=min(60.0, max(1.0, duration_seconds)))
+    # Instagram Story: máximo 59s para garantir aceitação
+    clip = ImageClip(frame, duration=min(59.0, max(1.0, duration_seconds)))
 
     if audio_path and Path(audio_path).exists():
         audio = AudioFileClip(audio_path)
