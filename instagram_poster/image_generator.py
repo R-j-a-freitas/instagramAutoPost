@@ -141,12 +141,52 @@ def generate_image_from_prompt(prompt: str) -> bytes:
     return provider.generate(prompt)
 
 
+def _normalize_to_feed_size(image_bytes: bytes) -> bytes:
+    """
+    Garante que a imagem tem exatamente 1080x1080px (resolução ideal para o feed do Instagram).
+    Se a imagem for mais pequena ou não quadrada, é redimensionada mantendo as proporções
+    e centrada sobre um fundo desfocado da própria imagem (mesmo estilo das Stories).
+    """
+    from PIL import Image, ImageFilter
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+    target = 1080
+
+    # Se já estiver no tamanho certo, não faz nada
+    if w == target and h == target:
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", quality=95)
+        return buf.getvalue()
+
+    # Fundo: imagem esticada para 1080x1080 e desfocada
+    bg = img.resize((target, target), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
+
+    # Imagem central: caber dentro de 1080x1080 mantendo proporção
+    scale = min(target / w, target / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    center_img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    x = (target - new_w) // 2
+    y = (target - new_h) // 2
+    bg.paste(center_img, (x, y))
+
+    buf = io.BytesIO()
+    bg.save(buf, format="PNG", quality=95)
+    return buf.getvalue()
+
+
 def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
     """
-    Sobrepõe o texto da quote centrado na imagem.
+    Normaliza a imagem para 1080x1080 (feed Instagram) e sobrepõe o texto da quote centrado.
     Usa Pillow para renderizar tipografia legível com sombra.
     """
     from PIL import Image, ImageDraw, ImageFont
+
+    # Normalizar para 1080x1080 antes de qualquer sobreposição
+    image_bytes = _normalize_to_feed_size(image_bytes)
 
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = img.size
