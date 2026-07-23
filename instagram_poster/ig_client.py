@@ -85,6 +85,91 @@ def create_media(image_url: str, caption: str) -> str:
     return creation_id
 
 
+def create_carousel_item(image_url: str) -> str:
+    """
+    Cria um container "filho" de um carrossel (imagem), sem caption.
+    POST /{ig-business-id}/media com image_url e is_carousel_item=true.
+    Devolve o creation_id para incluir na lista children de create_carousel.
+    Docs: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/content-publishing#carousel-posts
+    """
+    _check_config()
+    ig_id = get_ig_business_id()
+    url = _url(f"/{ig_id}/media")
+    token = get_ig_access_token()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    payload = {
+        "image_url": image_url,
+        "is_carousel_item": "true",
+    }
+    logger.info("A criar item de carrossel para image_url=%s", image_url[:80] + "..." if len(image_url) > 80 else image_url)
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        body = (resp.text or "")[:1000]
+        logger.error("create_carousel_item falhou: status=%s body=%s", resp.status_code, body)
+        if resp.status_code == 400:
+            try:
+                err = resp.json().get("error", {})
+                user_msg = err.get("error_user_msg") or err.get("message") or body
+                raise ValueError(f"Instagram Carousel Item: {user_msg}") from e
+            except ValueError:
+                raise
+            except Exception:
+                pass
+        raise
+    data = resp.json()
+    creation_id = data.get("id")
+    if not creation_id:
+        logger.error("Resposta sem 'id': %s", data)
+        raise ValueError("Resposta da API sem container ID para item de carrossel")
+    return creation_id
+
+
+def create_carousel(children_ids: list[str], caption: str) -> str:
+    """
+    Cria o content container "pai" de um carrossel (2 a 10 imagens).
+    POST /{ig-business-id}/media com media_type=CAROUSEL, children (lista de creation_id
+    devolvidos por create_carousel_item) e caption.
+    Devolve o creation_id do pai para usar em publish_media.
+    """
+    _check_config()
+    if not (2 <= len(children_ids) <= 10):
+        raise ValueError(f"Um carrossel precisa de 2 a 10 itens (recebidos: {len(children_ids)}).")
+    ig_id = get_ig_business_id()
+    url = _url(f"/{ig_id}/media")
+    token = get_ig_access_token()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    payload = {
+        "media_type": "CAROUSEL",
+        "children": children_ids,
+        "caption": caption,
+    }
+    logger.info("A criar carrossel com %d itens", len(children_ids))
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        body = (resp.text or "")[:1000]
+        logger.error("create_carousel falhou: status=%s body=%s", resp.status_code, body)
+        if resp.status_code == 400:
+            try:
+                err = resp.json().get("error", {})
+                user_msg = err.get("error_user_msg") or err.get("message") or body
+                raise ValueError(f"Instagram Carousel: {user_msg}") from e
+            except ValueError:
+                raise
+            except Exception:
+                pass
+        raise
+    data = resp.json()
+    creation_id = data.get("id")
+    if not creation_id:
+        logger.error("Resposta sem 'id': %s", data)
+        raise ValueError("Resposta da API sem container ID para carrossel")
+    return creation_id
+
+
 def create_story(image_url: Optional[str] = None, video_url: Optional[str] = None) -> str:
     """
     Cria um content container para uma Story (imagem ou vídeo 9:16, ex.: 1080x1920).

@@ -53,6 +53,7 @@ def _posts_to_dataframe(posts: list[dict], start_date: date) -> pd.DataFrame:
     """Converte lista de posts em DataFrame com datas reais."""
     rows = []
     for i, p in enumerate(posts):
+        post_type = (p.get("Post Type") or "single").strip().lower() or "single"
         rows.append({
             "Date": (start_date + timedelta(days=i)).strftime("%Y-%m-%d"),
             "Time": p.get("Time", "21:30"),
@@ -63,14 +64,22 @@ def _posts_to_dataframe(posts: list[dict], start_date: date) -> pd.DataFrame:
             "Published": "",
             "ImageURL": "",
             "Image Prompt": "yes",
+            "Post Type": post_type,
+            "Slide2 Text": p.get("Slide2 Text", "") if post_type == "carousel" else "",
         })
     return pd.DataFrame(rows)
 
 
 def _dataframe_to_sheet_rows(df: pd.DataFrame) -> list[list[str]]:
-    """Converte DataFrame para lista de listas (ordem das colunas do Sheet)."""
+    """
+    Converte DataFrame para lista de listas (ordem das colunas do Sheet).
+    Nota: "Post Type" e "Slide2 Text" (colunas 10-11) só são preenchidas correctamente
+    se essas colunas existirem nessa posição no Google Sheet. Sem elas, o post é sempre
+    tratado como "single" (comportamento anterior, sem quebrar nada).
+    """
     col_order = ["Date", "Time", "Image Text", "Caption", "Gemini_Prompt",
-                 "Status", "Published", "ImageURL", "Image Prompt"]
+                 "Status", "Published", "ImageURL", "Image Prompt",
+                 "Post Type", "Slide2 Text"]
     result = []
     for _, row in df.iterrows():
         result.append([str(row.get(c, "")) for c in col_order])
@@ -96,6 +105,12 @@ with nav3:
 
 st.title("Criacao de conteudo")
 st.caption("Gera novos posts com IA e adiciona directamente ao Google Sheet.")
+st.info(
+    "Alguns posts podem ser gerados como **carrossel** (2 slides: quote + explicação do dia). "
+    "Para isso funcionar, o Google Sheet precisa das colunas **Post Type** e **Slide2 Text** "
+    "como colunas 10 e 11 (a seguir a Image Prompt). Sem elas, estes posts são publicados como imagem única.",
+    icon="🎠",
+)
 
 # Determinar data inicial (dia seguinte ao ultimo post no Sheet)
 _default_start = date.today() + timedelta(days=1)
@@ -158,6 +173,8 @@ if "generated_content" in st.session_state and st.session_state["generated_conte
             "Published": st.column_config.TextColumn("Published", width="small", disabled=True),
             "ImageURL": st.column_config.TextColumn("ImageURL", width="small", disabled=True),
             "Image Prompt": st.column_config.TextColumn("Image Prompt", width="small", disabled=True),
+            "Post Type": st.column_config.SelectboxColumn("Post Type", width="small", options=["single", "carousel"]),
+            "Slide2 Text": st.column_config.TextColumn("Slide2 Text", width="large"),
         },
         key="content_editor",
     )

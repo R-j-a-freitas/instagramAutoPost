@@ -132,12 +132,66 @@ def select_post_to_publish(
     raise ValueError("mode deve ser 'next' ou 'row'")
 
 
+def _publish_carousel_post(
+    row_index: int,
+    image_url: str,
+    gemini_prompt: str,
+    image_text: str,
+    slide2_text: str,
+    caption: str,
+) -> tuple[str, str]:
+    """
+    Publica um carrossel de 2 slides (imagem + cartão de explicação do dia).
+    - Se image_url já estiver preenchido, usa-o como slide 1 e gera só o slide 2 a partir dele.
+    - Caso contrário, gera as duas imagens a partir de UMA única chamada à AI (Gemini_Prompt/Image Text).
+    Devolve (media_id, slide1_image_url) — o slide1_image_url é o que fica gravado em ImageURL no Sheet.
+    """
+    from instagram_poster import image_generator
+    provider_name = get_image_provider()
+    provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
+    try:
+        if image_url:
+            slide1_url = image_url
+            slide1_bytes = image_generator._download_image(image_url)
+            slide2_bytes = image_generator.render_explanation_card(slide1_bytes, slide2_text)
+            slide2_url = image_generator.upload_image_bytes(slide2_bytes, public_id_prefix=f"keepcalm_{row_index}_s2")
+        else:
+            if not (gemini_prompt or image_text):
+                raise ValueError(
+                    "O post não tem ImageURL nem Gemini_Prompt/Image Text no Sheet. Preenche um deles ou configura "
+                    f"o provedor de imagens ({provider_label}) na página Configuração."
+                )
+            slide1_url, slide2_url = image_generator.get_carousel_slides_from_prompt(
+                prompt=gemini_prompt or image_text,
+                quote_text=image_text,
+                explanation_text=slide2_text,
+                use_full_prompt=bool(gemini_prompt),
+                public_id_prefix=f"keepcalm_{row_index}",
+            )
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(
+            f"Falha ao gerar imagens do carrossel com {provider_label}: {e}. "
+            "Verifica as credenciais na Configuração ou preenche ImageURL no Sheet."
+        ) from e
+
+    item1_id = ig_client.create_carousel_item(slide1_url)
+    item2_id = ig_client.create_carousel_item(slide2_url)
+    parent_id = ig_client.create_carousel([item1_id, item2_id], caption)
+    media_id = ig_client.publish_media(parent_id)
+    return media_id, slide1_url
+
+
 def publish_post(post: dict[str, Any]) -> str:
     """
     Publica um post no Instagram e marca o Sheet como publicado.
-    - post: dicionário com image_url (opcional), gemini_prompt, image_text, caption, row_index.
+    - post: dicionário com image_url (opcional), gemini_prompt, image_text, caption, row_index,
+      post_type ("single" ou "carousel") e slide2_text (explicação do dia para o 2º slide).
     - Se image_url estiver vazio, gera a imagem com o provedor activo usando Gemini_Prompt (ou Image Text como fallback)
       e faz upload para Cloudinary para obter um URL público.
+    - Se post_type="carousel" e slide2_text preenchido, publica um carrossel de 2 slides
+      (imagem + cartão de explicação do dia) em vez de uma imagem única.
     - Devolve o media_id do post publicado.
     """
     image_url = (post.get("image_url") or "").strip()
@@ -145,6 +199,8 @@ def publish_post(post: dict[str, Any]) -> str:
     image_text = (post.get("image_text") or "").strip()
     caption = (post.get("caption") or "").strip()
     row_index = post.get("row_index")
+    post_type = (post.get("post_type") or "single").strip().lower()
+    slide2_text = (post.get("slide2_text") or "").strip()
     if row_index is None:
         raise ValueError("O post não tem row_index (linha do Sheet).")
 
@@ -152,32 +208,46 @@ def publish_post(post: dict[str, Any]) -> str:
     if image_url and not (image_url.startswith("http://") or image_url.startswith("https://")):
         image_url = ""
 
-    if not image_url and (gemini_prompt or image_text):
-        provider_name = get_image_provider()
-        provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
-        try:
-            from instagram_poster import image_generator
-            image_url = image_generator.get_image_url_from_prompt(
-                prompt=gemini_prompt or image_text,
-                quote_text=image_text,
-                use_full_prompt=bool(gemini_prompt),
-                public_id_prefix=f"keepcalm_{row_index}",
-            )
-        except Exception as e:
-            raise ValueError(
-                f"Falha ao gerar imagem com {provider_label}: {e}. "
-                "Verifica as credenciais na Configuração ou preenche ImageURL no Sheet."
-            ) from e
-    if not image_url:
-        provider_name = get_image_provider()
-        provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
-        raise ValueError(
-            f"O post não tem ImageURL no Sheet. Preenche ImageURL ou configura "
-            f"o provedor de imagens ({provider_label}) na página Configuração."
-        )
+    if post_type == "carousel" and not slide2_text:
+        logger.warning("Linha %s marcada como carrossel mas sem Slide2 Text; a publicar como post normal.", row_index)
 
-    creation_id = ig_client.create_media(image_url=image_url, caption=caption)
-    media_id = ig_client.publish_media(creation_id)
+    if post_type == "carousel" and slide2_text:
+        media_id, image_url = _publish_carousel_post(
+            row_index=row_index,
+            image_url=image_url,
+            gemini_prompt=gemini_prompt,
+            image_text=image_text,
+            slide2_text=slide2_text,
+            caption=caption,
+        )
+    else:
+        if not image_url and (gemini_prompt or image_text):
+            provider_name = get_image_provider()
+            provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
+            try:
+                from instagram_poster import image_generator
+                image_url = image_generator.get_image_url_from_prompt(
+                    prompt=gemini_prompt or image_text,
+                    quote_text=image_text,
+                    use_full_prompt=bool(gemini_prompt),
+                    public_id_prefix=f"keepcalm_{row_index}",
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Falha ao gerar imagem com {provider_label}: {e}. "
+                    "Verifica as credenciais na Configuração ou preenche ImageURL no Sheet."
+                ) from e
+        if not image_url:
+            provider_name = get_image_provider()
+            provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
+            raise ValueError(
+                f"O post não tem ImageURL no Sheet. Preenche ImageURL ou configura "
+                f"o provedor de imagens ({provider_label}) na página Configuração."
+            )
+
+        creation_id = ig_client.create_media(image_url=image_url, caption=caption)
+        media_id = ig_client.publish_media(creation_id)
+
     _update_sheet_after_publish(row_index, image_url)
 
     # Publicar Story automaticamente com o mesmo conteúdo, se activado

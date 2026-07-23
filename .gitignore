@@ -33,3 +33,9 @@ instagramAutoPost/
 .comment_autoreply_replied/
 assets/reels_used_rows.json
 assets/music/MUSIC/*.mp3
+.config_overrides.json
+content_system_prompt_override.txt
+.comment_autoreply.lock
+*.log
+scratch/
+*TEMP_MPY*.mp4

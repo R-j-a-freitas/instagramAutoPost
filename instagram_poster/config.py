@@ -272,6 +272,8 @@ Each row has these columns (fixed order):
 7. Published – always empty string
 8. ImageURL – always empty string
 9. Image Prompt – always "yes"
+10. Post Type – "single" (one image) or "carousel" (two-slide post: idea + explanation)
+11. Slide2 Text – only used when Post Type is "carousel" (see rules below)
 
 ## Rules for each field
 
@@ -308,10 +310,19 @@ Each row has these columns (fixed order):
 - ImageURL: always ""
 - Image Prompt: always "yes"
 
+### Post Type and Slide2 Text (carousel posts)
+- About 1 in every 3-4 posts should be a "carousel" (two slides); the rest should be "single".
+- For "single" posts: Post Type = "single" and Slide2 Text = "" (empty).
+- For "carousel" posts: Post Type = "carousel", and Slide2 Text must contain a short explanation
+  of the day's message (40-80 words), expanding on the Image Text quote in the same warm, practical
+  tone as the Caption. This text is rendered as the second slide of the carousel (the first slide is
+  the quote image). It should read as a stand-alone reflection, not a repeat of the Caption, and should
+  NOT include hashtags, emojis, or a call to action — just the explanation itself.
+
 ## Output format
 
 Return a JSON object with a single key "posts" containing an array of objects.
-Each object must have exactly these keys: "Date", "Time", "Image Text", "Caption", "Gemini_Prompt", "Status", "Published", "ImageURL", "Image Prompt".
+Each object must have exactly these keys: "Date", "Time", "Image Text", "Caption", "Gemini_Prompt", "Status", "Published", "ImageURL", "Image Prompt", "Post Type", "Slide2 Text".
 
 Vary the micro-themes across posts. Be creative but stay consistent with @keepcalmnbepositive style."""
 

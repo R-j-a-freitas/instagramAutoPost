@@ -411,7 +411,7 @@ def try_publish_auto_reel() -> bool:
 
 def _try_publish_auto_reel_impl() -> bool:
     """Implementação de try_publish_auto_reel (chamada dentro do lock)."""
-    global _last_reel_row_indices
+    global _last_reel_row_indices, _last_reel_at
     try:
         from instagram_poster.reel_generator import (
             create_reel_video,
@@ -566,8 +566,8 @@ def _try_publish_reel_reuse_impl() -> bool:
             _last_reuse_reel_at = datetime.now()
         _add_log_entry(
             True,
-            f"Story (reuse agendado) publicada: \"{caption[:50]}...\"",
-            entry_type="reuse_story",
+            f"Reel (reuse agendado) publicado: \"{caption[:50]}...\"",
+            entry_type="reuse_reel",
             media_id=media_id,
         )
         logger.info("Autopublish: Reel reuse agendado publicado, media_id=%s", media_id)

@@ -177,11 +177,14 @@ table_data = []
 for p in posts:
     caption_preview = (p.get("caption") or "")[:50] + ("..." if len(p.get("caption") or "") > 50 else "")
     gemini_preview = (p.get("gemini_prompt") or "")[:40] + ("..." if len(p.get("gemini_prompt") or "") > 40 else "")
+    slide2_preview = (p.get("slide2_text") or "")[:40] + ("..." if len(p.get("slide2_text") or "") > 40 else "")
     table_data.append({
         "Linha": p.get("row_index"),
         "Data": p.get("date", ""),
         "Hora": p.get("time", ""),
+        "Tipo": "🎠 carousel" if (p.get("post_type") or "single") == "carousel" else "single",
         "Image Text": (p.get("image_text") or "")[:40] + ("..." if len(p.get("image_text") or "") > 40 else ""),
+        "Slide2 Text": slide2_preview or "—",
         "Caption": caption_preview,
         "Gemini_Prompt": gemini_preview,
         "Status": p.get("status", ""),
@@ -222,7 +225,11 @@ if st.session_state.last_publish_result:
 with st.expander("Ver detalhes do post selecionado"):
     detail = next((p for p in posts if p["row_index"] == selected_row_index), None)
     if detail:
-        st.write("**Image Text:**", detail.get("image_text") or "(vazio)")
+        is_carousel = (detail.get("post_type") or "single") == "carousel" and bool((detail.get("slide2_text") or "").strip())
+        st.write("**Tipo:**", "🎠 Carrossel (2 slides)" if is_carousel else "Imagem única")
+        st.write("**Image Text (slide 1):**", detail.get("image_text") or "(vazio)")
+        if is_carousel:
+            st.write("**Slide2 Text (slide 2):**", detail.get("slide2_text") or "(vazio)")
         st.write("**Caption:**", detail.get("caption") or "(vazio)")
         st.write("**Gemini_Prompt:**", detail.get("gemini_prompt") or "(vazio)")
         st.write("**ImageURL:**", detail.get("image_url") or "(vazio)")

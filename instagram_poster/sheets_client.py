@@ -7,7 +7,13 @@ Estrutura oficial das colunas:
 """
 import json
 import logging
+import os
 from pathlib import Path
+
+# Permitir HTTP para localhost (necessário para o redirecionamento manual em servidores)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+# Trigger reload: 2026-05-12 14:33
 from datetime import date, datetime, time
 from typing import Any, Optional
 
@@ -41,6 +47,9 @@ COL_STATUS = "Status"
 COL_PUBLISHED = "Published"
 COL_IMAGE_URL = "ImageURL"
 COL_IMAGE_PROMPT = "Image Prompt"
+# Colunas opcionais para carrossel (2 slides). Se ausentes do Sheet, o post é tratado como "single".
+COL_POST_TYPE = "Post Type"
+COL_SLIDE2_TEXT = "Slide2 Text"
 
 # Ficheiros OAuth (na raiz do projeto)
 _OAUTH_CLIENT_JSON = _PROJECT_ROOT / "google_oauth_client.json"
@@ -53,15 +62,16 @@ def _get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
-def _get_oauth_credentials() -> Credentials:
+def _get_oauth_credentials(force: bool = False) -> Credentials:
     creds: Optional[Credentials] = None
-    if _OAUTH_AUTHORIZED_JSON.exists():
+    if not force and _OAUTH_AUTHORIZED_JSON.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(_OAUTH_AUTHORIZED_JSON), SCOPES)
         except Exception as exc:
             logger.warning("Token OAuth inválido, será ignorado: %s", exc)
             creds = None
-    if creds and creds.expired and creds.refresh_token:
+
+    if not force and creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
             _OAUTH_AUTHORIZED_JSON.write_text(creds.to_json())
@@ -69,22 +79,101 @@ def _get_oauth_credentials() -> Credentials:
         except Exception as exc:
             logger.warning("Falha ao renovar token do Google: %s", exc)
             creds = None
-    if creds and creds.valid:
+
+    if not force and creds and creds.valid:
         return creds
 
-    client_config = _load_oauth_client_config()
+    # Se chegamos aqui, precisamos de novo login
+    flow = get_google_auth_flow()
     try:
-        flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+        creds = flow.run_local_server(port=0, prompt="consent", timeout_seconds=300)
     except Exception as exc:
-        raise ValueError(
-            "OAuth do Google inválido. Confirma o client_id/client_secret na Configuração."
+        logger.error("Erro ao abrir browser para OAuth: %s", exc)
+        raise RuntimeError(
+            "Não foi possível abrir o browser para autorização. "
+            "Usa o botão 'Gerar Link Manual' na página de Configuração."
         ) from exc
-    creds = flow.run_local_server(port=0, prompt="consent")
+
     try:
         _OAUTH_AUTHORIZED_JSON.write_text(creds.to_json())
     except Exception as exc:
         logger.warning("Não foi possível guardar o token OAuth: %s", exc)
     return creds
+
+
+def get_google_auth_flow() -> InstalledAppFlow:
+    client_config = _load_oauth_client_config()
+    try:
+        return InstalledAppFlow.from_client_config(client_config, SCOPES)
+    except Exception as exc:
+        raise ValueError(
+            "OAuth do Google inválido. Confirma o client_id/client_secret na Configuração."
+        ) from exc
+
+
+def get_google_auth_url(port: int = 8090) -> tuple[str, str, str]:
+    """Gera o URL de autorização e os dados necessários para validação (state, verifier)."""
+    flow = get_google_auth_flow()
+    flow.redirect_uri = f"http://localhost:{port}/"
+    url, state = flow.authorization_url(prompt="consent", access_type="offline")
+    # Capturamos o code_verifier gerado automaticamente pelo flow
+    return url, state, flow.code_verifier
+
+
+def fetch_google_token_from_url(response_url: str, state: str, code_verifier: str = None, port: int = 8090) -> bool:
+    """Consome o URL de redirecionamento para obter o token final."""
+    try:
+        flow = get_google_auth_flow()
+        flow.redirect_uri = f"http://localhost:{port}/"
+        
+        # Restaurar o code_verifier se fornecido (essencial para evitar invalid_grant)
+        if code_verifier:
+            flow.code_verifier = code_verifier
+            
+        # OAuthlib exige que o state seja o mesmo da geração
+        # Corrigir HTTPS se necessário (oauthlib é picuinhas com localhost)
+        # Já definido no topo do ficheiro, mas reforçamos aqui
+        
+        flow.fetch_token(authorization_response=response_url)
+        creds = flow.credentials
+        
+        if creds:
+            if _OAUTH_AUTHORIZED_JSON.exists():
+                _OAUTH_AUTHORIZED_JSON.unlink()
+            _OAUTH_AUTHORIZED_JSON.write_text(creds.to_json())
+            return True
+        return False
+    except Exception as e:
+        logger.error("Erro ao processar URL de retorno: %s", e)
+        raise e
+
+
+def authorize_google_sheets(port: int = 8090, url_callback=None) -> bool:
+    """Força o fluxo de autorização do Google (inicia o servidor e aguarda)."""
+    try:
+        if _OAUTH_AUTHORIZED_JSON.exists():
+            _OAUTH_AUTHORIZED_JSON.unlink()
+        
+        flow = get_google_auth_flow()
+        flow.redirect_uri = f"http://localhost:{port}/"
+        
+        if url_callback:
+            # Monkey-patch para capturar o URL exato que o servidor vai usar
+            def custom_print_status(url):
+                url_callback(url)
+            flow._print_status = custom_print_status
+            
+        # Inicia o servidor no porto especificado. 
+        # open_browser=False para evitar o erro de 'could not locate runnable browser'
+        creds = flow.run_local_server(port=port, prompt="consent", timeout_seconds=300, open_browser=False)
+        
+        if creds:
+            _OAUTH_AUTHORIZED_JSON.write_text(creds.to_json())
+            return True
+        return False
+    except Exception as e:
+        logger.error("Falha na autorização manual: %s", e)
+        raise e
 
 
 def _load_oauth_client_config() -> dict[str, Any]:
@@ -139,6 +228,7 @@ def _row_to_record(row: list[Any], col: dict[str, int], sheet_row_index: int) ->
         v = row[idx]
         return str(v).strip() if v is not None else default
 
+    post_type = get(COL_POST_TYPE, "single").strip().lower() or "single"
     return {
         "row_index": sheet_row_index,
         "date": get(COL_DATE),
@@ -150,6 +240,8 @@ def _row_to_record(row: list[Any], col: dict[str, int], sheet_row_index: int) ->
         "published": get(COL_PUBLISHED),
         "image_url": get(COL_IMAGE_URL),
         "image_prompt": get(COL_IMAGE_PROMPT),
+        "post_type": post_type,
+        "slide2_text": get(COL_SLIDE2_TEXT),
     }
 
 

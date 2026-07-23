@@ -1,6 +1,7 @@
 """
 Configuração dos acessos: Google Sheets, Instagram, geração de imagens, Cloudinary.
 Ao carregar JSON ou verificar, as variáveis são atualizadas no .env.
+# Trigger reload: 2026-05-12 14:34
 """
 import json
 import os
@@ -8,8 +9,14 @@ import re
 from pathlib import Path
 import streamlit as st
 
-from instagram_poster.auth import require_auth, render_auth_sidebar
+import sys
+import os
+import importlib
+import instagram_poster.sheets_client
+importlib.reload(instagram_poster.sheets_client)
+
 import instagram_poster.config as config
+from instagram_poster.auth import require_auth, render_auth_sidebar
 # Forçar funções se faltarem (Streamlit cache issue)
 if not hasattr(config, "get_text_provider"):
     def _tp(): return (os.getenv("TEXT_PROVIDER") or config.get_runtime_override("TEXT_PROVIDER") or "pollinations").strip()
@@ -24,7 +31,13 @@ from instagram_poster.env_utils import (
     update_env_vars,
 )
 from instagram_poster.providers import AVAILABLE_PROVIDERS
-from instagram_poster.sheets_client import get_all_rows_with_image_text, update_gemini_prompt
+from instagram_poster.sheets_client import (
+    authorize_google_sheets,
+    fetch_google_token_from_url,
+    get_all_rows_with_image_text,
+    get_google_auth_url,
+    update_gemini_prompt,
+)
 from instagram_poster.verification import (
     check_instagram_api_status,
     verify_all_connections,
@@ -378,6 +391,47 @@ if st.button("Verificar e aceitar — Google Sheets", key="verify_sheets"):
             st.warning("Token expirado ou revogado. Clica em «Desligar e renovar autorização» acima e depois em «Verificar e aceitar» para reautorizar no browser.")
         elif _client_config_available:
             st.info("Na primeira vez, o browser deve abrir para autorizares. Se não abriu, verifica a consola/terminal.")
+
+st.markdown("---")
+st.markdown("#### Autorização Manual (Recomendado para Servidores)")
+st.caption("Usa este método se o botão acima ficar 'bloqueado' ou der erro de porta.")
+
+col_m1, col_m2 = st.columns([1, 2])
+with col_m1:
+    if st.button("Step 1: Gerar Link", key="manual_step1"):
+        _apply_config_from_session()
+        try:
+            url, state, verifier = get_google_auth_url(port=8090)
+            st.session_state.google_auth_url = url
+            st.session_state.google_auth_state = state
+            st.session_state.google_auth_verifier = verifier
+            st.success("Link gerado! Segue o Step 2.")
+        except Exception as e:
+            st.error(f"Erro: {e}")
+
+if st.session_state.get("google_auth_url"):
+    st.info("1. Abre este link no teu browser e autoriza:")
+    st.code(st.session_state.google_auth_url, language=None)
+    
+    st.markdown("2. Após autorizares, o browser vai tentar abrir `localhost:8090/...` e dar erro. **Copia o URL completo** dessa página de erro (da barra de endereços).")
+    
+    res_url = st.text_input("3. Cola aqui o URL de redirecionamento:", key="manual_res_url", placeholder="http://localhost:8090/?state=...&code=...")
+    
+    if st.button("Step 2: Validar e Concluir", key="manual_step2", type="primary"):
+        if not res_url:
+            st.error("Cola o URL primeiro!")
+        else:
+            try:
+                state = st.session_state.get("google_auth_state")
+                verifier = st.session_state.get("google_auth_verifier")
+                if fetch_google_token_from_url(res_url, state, code_verifier=verifier, port=8090):
+                    st.success("✅ Google Sheets autorizado com sucesso!")
+                    st.session_state.google_auth_url = None
+                    st.session_state.google_auth_verifier = None
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao validar token: {e}")
+                st.info("Dica: Certifica-te que copiaste o URL completo e que não passou muito tempo desde que geraste o link.")
 
 st.divider()
 
