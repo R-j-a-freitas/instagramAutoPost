@@ -165,6 +165,34 @@ HYPERFRAMES_DURATION = 8.0  # fixo no modelo (data-duration)
 COVER_OFFSET_MS = 3500  # capa do Reel: frase completa, linha e @ já visíveis
 
 
+# Efeito 2.5D: recorte do primeiro plano por profundidade (Depth Anything V2 Small, no CPU, ~10 s),
+# feito pela ferramenta em ~/video/tools com o seu próprio ambiente Python. QUOTE_REEL_PARALLAX=false desliga.
+DEPTH_PYTHON = os.environ.get("DEPTH_PYTHON", str(Path.home() / "video/envs/depth/bin/python"))
+DEPTH_SCRIPT = os.environ.get("DEPTH_SCRIPT", str(Path.home() / "video/tools/depth_layers.py"))
+
+
+def _depth_foreground(image: Path, out_dir: Path) -> bool:
+    if os.environ.get("QUOTE_REEL_PARALLAX", "true").lower() in ("false", "0", "no", "off"):
+        return False
+    if not (Path(DEPTH_PYTHON).exists() and Path(DEPTH_SCRIPT).exists()):
+        logger.warning("Quote reel: ferramenta de profundidade não encontrada; sem paralaxe")
+        return False
+    try:
+        r = subprocess.run([DEPTH_PYTHON, DEPTH_SCRIPT, str(image), str(out_dir)],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout)[-300:])
+        clean = out_dir / "bg_clean.jpg"
+        if clean.exists():  # fundo sem o primeiro plano: evita o "fantasma" atrás da pessoa
+            clean.replace(image)
+        logger.info("Quote reel: paralaxe %s", r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "")
+        return True
+    except Exception as e:
+        logger.warning("Quote reel: recorte por profundidade falhou (%s); sem paralaxe", e)
+        (out_dir / "fg.png").write_bytes((HYPERFRAMES_TEMPLATE / "fg.png").read_bytes())
+        return False
+
+
 def _render_hyperframes(quote: str, background: bytes, audio_path: Optional[str], audio_volume: float) -> bytes:
     if not Path(HYPERFRAMES_BIN).exists():
         raise FileNotFoundError(f"HyperFrames não encontrado em {HYPERFRAMES_BIN}")
@@ -172,6 +200,7 @@ def _render_hyperframes(quote: str, background: bytes, audio_path: Optional[str]
         proj = Path(td, "proj")
         shutil.copytree(HYPERFRAMES_TEMPLATE, proj)
         (proj / "bg.jpg").write_bytes(background)
+        _depth_foreground(proj / "bg.jpg", proj)  # fg.png para a paralaxe; se falhar fica o transparente
         vars_file = Path(td, "vars.json")
         vars_file.write_text(json.dumps({"quote": quote, "handle": HANDLE}, ensure_ascii=False), encoding="utf-8")
         silent = Path(td, "silent.mp4")

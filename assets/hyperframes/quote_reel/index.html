@@ -18,8 +18,11 @@
   html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #0d0f12; }
   #reel { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #0d0f12;
           font-family: "Inter", sans-serif; color: #ffffff; }
-  .bg { position: absolute; inset: 0; }
-  .bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bg, .fg { position: absolute; inset: 0; }
+  .bg img, .fg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Efeito 2.5D: o primeiro plano (fg.png, recortado por profundidade) aproxima-se mais depressa
+     do que o fundo. Sem recorte, fg.png é transparente e fica só o zoom do fundo. */
+  .fg { transform-origin: 50% 85%; }
   /* Escurecimento suave ao centro para a frase ler bem sobre qualquer imagem */
   .shade { position: absolute; inset: 0;
            background: radial-gradient(ellipse 85% 45% at 50% 42%, rgba(0,0,0,.42), rgba(0,0,0,.12) 70%, rgba(0,0,0,.25)); }
@@ -40,6 +43,7 @@
 <body>
 <div id="reel" data-composition-id="reel" data-start="0" data-duration="8" data-width="1080" data-height="1920">
   <div class="bg" id="bg"><img src="bg.jpg" alt=""></div>
+  <div class="fg" id="fg"><img src="fg.png" alt=""></div>
   <div class="shade" id="shade"></div>
   <div class="stage">
     <div class="panel" id="panel">
@@ -70,8 +74,10 @@
 
   const words = q.querySelectorAll(".w");
   const tl = gsap.timeline({ paused: true });
-  // Fundo: zoom lento durante todo o Reel
-  tl.fromTo("#bg", { scale: 1.0 }, { scale: 1.08, duration: 8, ease: "none" }, 0);
+  // Câmara: o fundo aproxima-se devagar e desliza para um lado; o primeiro plano aproxima-se mais e
+  // desliza para o outro (paralaxe). Com fg.png transparente fica só o zoom do fundo.
+  tl.fromTo("#bg", { scale: 1.0, x: 0 }, { scale: 1.04, x: -8, duration: 8, ease: "sine.inOut" }, 0);
+  tl.fromTo("#fg", { scale: 1.0, x: 0 }, { scale: 1.085, x: 6, duration: 8, ease: "sine.inOut" }, 0);
   // Entrada: painel, palavras uma a uma, linha de acento, @
   tl.from("#panel", { opacity: 0, scale: 0.96, duration: 0.45, ease: "power2.out" }, 0.1);
   const step = Math.min(0.13, 2.2 / Math.max(words.length, 1));  // a frase fica completa até ~2,7 s
