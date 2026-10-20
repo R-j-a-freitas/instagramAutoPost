@@ -3,6 +3,8 @@ Motor de publicacao automatica.
 - run_once(): verifica e publica o proximo post pronto (usado pelo CLI e pelo thread).
 - start_background_loop() / stop_background_loop(): thread de background dentro do Streamlit.
 - try_publish_auto_reel(): gera e publica um Reel quando ha 5 posts (8s/slide, fade, audio MUSIC).
+- try_publish_quote_reel(): Reel de uma frase (9:16, ~8 s), um por dia a partir de AUTOPUBLISH_QUOTE_REEL_HOUR.
+- feed_gap_ok(): intervalo mínimo (AUTOPUBLISH_MIN_GAP_HOURS) entre posts/Reels, para não publicar em rajada.
 """
 import json
 import logging
@@ -492,6 +494,99 @@ def _try_publish_auto_reel_impl() -> bool:
         return False
 
 
+# Publicações que contam para o intervalo mínimo entre posts/Reels (as Stories não contam).
+_FEED_PUBLICATION_TYPES = ("publish", "auto_reel", "reuse_reel", "quote_reel")
+_QUOTE_REEL_STATE_FILE = _PROJECT_ROOT / "assets" / "quote_reel_state.json"
+
+
+def hours_since_last_feed_publication() -> Optional[float]:
+    """Horas desde o último post ou Reel publicado com sucesso (None se não houver no registo)."""
+    with _lock:
+        stamps = [e["timestamp"] for e in _log
+                  if e.get("success") is True and e.get("type") in _FEED_PUBLICATION_TYPES
+                  and isinstance(e.get("timestamp"), datetime)]
+    if not stamps:
+        return None
+    return (datetime.now() - max(stamps)).total_seconds() / 3600
+
+
+def feed_gap_ok() -> bool:
+    """True se já passou o intervalo mínimo (AUTOPUBLISH_MIN_GAP_HOURS) desde a última publicação no feed."""
+    from instagram_poster.config import get_autopublish_min_gap_hours
+    hours = hours_since_last_feed_publication()
+    return hours is None or hours >= get_autopublish_min_gap_hours()
+
+
+def _quote_reel_state() -> dict[str, Any]:
+    try:
+        return json.loads(_QUOTE_REEL_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_quote_reel_state(state: dict[str, Any]) -> None:
+    _QUOTE_REEL_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _QUOTE_REEL_STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state), encoding="utf-8")
+    tmp.replace(_QUOTE_REEL_STATE_FILE)
+
+
+def try_publish_quote_reel() -> bool:
+    """
+    Reel de uma frase (instagram_poster.quote_reel): no máximo um por dia, a partir de
+    AUTOPUBLISH_QUOTE_REEL_HOUR, com o post publicado mais recente que ainda não teve Reel,
+    e só se já passou o intervalo mínimo desde a última publicação. Uma tentativa por dia
+    (se falhar, fica registado e tenta no dia seguinte). Retorna True se publicou.
+    """
+    from instagram_poster.config import get_autopublish_quote_reel, get_autopublish_quote_reel_hour
+    if not get_autopublish_quote_reel():
+        return False
+    now = datetime.now()
+    today = now.date().isoformat()
+    if now.hour < get_autopublish_quote_reel_hour() or _quote_reel_state().get("last_date") == today:
+        return False
+    if not feed_gap_ok():
+        return False
+    with _file_lock(_REEL_LOCK_FILE) as lock_ok:
+        if not lock_ok:
+            logger.info("Outro processo a publicar Reel; a ignorar para evitar duplicado.")
+            return False
+        return _try_publish_quote_reel_impl(today)
+
+
+def _try_publish_quote_reel_impl(today: str) -> bool:
+    try:
+        from instagram_poster import ig_client
+        from instagram_poster.db import get_published_posts_with_image
+        from instagram_poster.quote_reel import create_quote_reel, get_used_row_indices, mark_used
+        from instagram_poster.reel_generator import upload_video_bytes
+    except Exception as e:
+        logger.warning("Quote reel: import falhou: %s", e)
+        return False
+    used = get_used_row_indices()
+    candidates = [p for p in get_published_posts_with_image()
+                  if (p.get("image_text") or "").strip() and int(p.get("row_index") or 0) not in used]
+    if not candidates:
+        return False
+    post = candidates[0]  # mais recente primeiro
+    _save_quote_reel_state({"last_date": today, "row": post.get("row_index"), "status": "a publicar"})
+    try:
+        video_bytes = create_quote_reel(post)
+        video_url = upload_video_bytes(video_bytes, public_id_prefix="ig_quote_reel")
+        creation_id = ig_client.create_reel(video_url=video_url, caption=post.get("caption") or post["image_text"])
+        media_id = ig_client.publish_media(creation_id, max_wait=240)
+        mark_used(int(post["row_index"]), media_id=media_id)
+        _save_quote_reel_state({"last_date": today, "row": post.get("row_index"), "status": "publicado", "media_id": media_id})
+        _add_log_entry(True, f"Reel de frase publicado: \"{post['image_text'][:50]}\"",
+                       entry_type="quote_reel", post_data=post, media_id=media_id)
+        return True
+    except Exception as e:
+        logger.exception("Quote reel: falha")
+        _save_quote_reel_state({"last_date": today, "row": post.get("row_index"), "status": f"falhou: {e}"[:300]})
+        _add_log_entry(False, f"Reel de frase falhou: {e}", entry_type="error", post_data=post)
+        return False
+
+
 def try_publish_reel_reuse_scheduled() -> bool:
     """
     Se estiver activo o agendamento de Reels com reutilização, e tiver passado o intervalo
@@ -693,23 +788,37 @@ def _loop(interval_minutes: int):
             f"Verificação às {cycle_start.strftime('%H:%M:%S')} (intervalo: {interval_minutes} min)",
             entry_type="check",
         )
+        result = None
         try:
-            result = run_once()
+            # Depois de uma paragem, os posts em atraso saem um de cada vez com o intervalo mínimo
+            # entre eles, em vez de numa rajada (ex.: 9 posts a 17/10 depois de 11 dias parado).
+            if feed_gap_ok():
+                result = run_once()
+            else:
+                _add_log_entry(None, "A aguardar o intervalo mínimo desde a última publicação", entry_type="check")
             # Não fazer continue aqui: o Sheet pode ainda nao ter atualizado (Published=yes),
             # e get_next_ready_post() na proxima iteracao devolveria o mesmo post, causando
             # publicacoes duplicadas. Publicar no maximo 1 post por ciclo e esperar o intervalo.
         except Exception:
             logger.exception("Autopublish: erro no loop")
-        try:
-            from instagram_poster.config import get_autopublish_reel_every_5
-            if get_autopublish_reel_every_5():
-                try_publish_auto_reel()
-        except Exception:
-            logger.exception("Autopublish: erro ao tentar Reel automático")
-        try:
-            try_publish_reel_reuse_scheduled()
-        except Exception:
-            logger.exception("Autopublish: erro ao tentar Reel reuse agendado")
+        # Reels: nunca no mesmo ciclo de um post e só depois do intervalo mínimo desde a última
+        # publicação (posts e Reels seguidos competem pelo mesmo público e baixam o alcance).
+        if result is not True:
+            try:
+                try_publish_quote_reel()
+            except Exception:
+                logger.exception("Autopublish: erro ao tentar Reel de frase")
+            try:
+                from instagram_poster.config import get_autopublish_reel_every_5
+                if get_autopublish_reel_every_5() and feed_gap_ok():
+                    try_publish_auto_reel()
+            except Exception:
+                logger.exception("Autopublish: erro ao tentar Reel automático")
+            try:
+                if feed_gap_ok():
+                    try_publish_reel_reuse_scheduled()
+            except Exception:
+                logger.exception("Autopublish: erro ao tentar Reel reuse agendado")
         try:
             try_publish_story_reuse_scheduled()
         except Exception:

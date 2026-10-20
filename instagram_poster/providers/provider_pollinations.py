@@ -19,13 +19,15 @@ _DEFAULT_PARAMS = {
 
 
 class PollinationsProvider:
-    def generate(self, prompt: str) -> bytes:
+    def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> bytes:
         import time
         api_key = get_pollinations_api_key()
 
         encoded_prompt = quote(prompt, safe="")
         url = _BASE_URL.format(prompt=encoded_prompt)
         params = _DEFAULT_PARAMS.copy()
+        if width and height:  # ex.: 1080x1920 para Reels; por omissão 1080x1350 (feed)
+            params["width"], params["height"] = str(width), str(height)
 
         headers = {}
         if api_key:

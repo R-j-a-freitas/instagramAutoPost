@@ -43,3 +43,8 @@ posts.db-journal
 *.log
 scratch/
 *TEMP_MPY*.mp4
+# Estado dos Reels de frase e relatórios de métricas (gerados em runtime)
+assets/quote_reel_state.json
+assets/quote_reels_used.json
+assets/quote_reels_media.json
+reports/

@@ -429,6 +429,11 @@ AUTOPUBLISH_REEL_ALLOW_REUSED_POSTS: str = _optional("AUTOPUBLISH_REEL_ALLOW_REU
 AUTOPUBLISH_REEL_REUSE_SCHEDULE: str = _optional("AUTOPUBLISH_REEL_REUSE_SCHEDULE", "false")
 AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES: str = _optional("AUTOPUBLISH_REEL_REUSE_INTERVAL_MINUTES", "120")
 AUTOPUBLISH_COMMENT_AUTOREPLY: str = _optional("AUTOPUBLISH_COMMENT_AUTOREPLY", "false")
+# Reel de uma frase (9:16 nativo, ~8 s), um por dia a partir desta hora local, com o post publicado mais recente.
+AUTOPUBLISH_QUOTE_REEL: str = _optional("AUTOPUBLISH_QUOTE_REEL", "true")
+AUTOPUBLISH_QUOTE_REEL_HOUR: str = _optional("AUTOPUBLISH_QUOTE_REEL_HOUR", "13")
+# Intervalo mínimo entre publicações no feed/Reels (posts, Reels); evita rajadas que competem entre si.
+AUTOPUBLISH_MIN_GAP_HOURS: str = _optional("AUTOPUBLISH_MIN_GAP_HOURS", "4")
 
 
 def get_autopublish_enabled() -> bool:
@@ -488,6 +493,27 @@ def get_autopublish_reel_reuse_interval_minutes() -> int:
         return max(30, int(float(val)))
     except (ValueError, TypeError):
         return 120
+
+
+def get_autopublish_quote_reel() -> bool:
+    val = get_runtime_override("AUTOPUBLISH_QUOTE_REEL") or os.getenv("AUTOPUBLISH_QUOTE_REEL") or AUTOPUBLISH_QUOTE_REEL
+    return val.lower() in ("true", "1", "yes", "on")
+
+
+def get_autopublish_quote_reel_hour() -> int:
+    val = get_runtime_override("AUTOPUBLISH_QUOTE_REEL_HOUR") or os.getenv("AUTOPUBLISH_QUOTE_REEL_HOUR") or AUTOPUBLISH_QUOTE_REEL_HOUR
+    try:
+        return min(23, max(0, int(float(val))))
+    except (ValueError, TypeError):
+        return 13
+
+
+def get_autopublish_min_gap_hours() -> float:
+    val = get_runtime_override("AUTOPUBLISH_MIN_GAP_HOURS") or os.getenv("AUTOPUBLISH_MIN_GAP_HOURS") or AUTOPUBLISH_MIN_GAP_HOURS
+    try:
+        return max(0.0, float(val))
+    except (ValueError, TypeError):
+        return 4.0
 
 
 def get_autopublish_comment_autoreply() -> bool:
