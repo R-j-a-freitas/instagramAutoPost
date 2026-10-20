@@ -17,4 +17,5 @@ fi
 
 echo "A iniciar Streamlit..."
 # Porta 8502 para coincidir com OAUTH_REDIRECT_BASE no .env
-python3 -m streamlit run app.py --server.port 8502
+# start_app.py liga o autopublish logo no arranque (sem esperar que alguém abra a página) e corre o Streamlit
+python3 start_app.py --server.port 8502
