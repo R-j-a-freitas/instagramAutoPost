@@ -17,6 +17,56 @@ _DEFAULT_PARAMS = {
     "enhance": "false",
 }
 
+# Vídeo: modelo por omissão (o mais barato, 0,01 pollen/s = 0,01 $/s; clips de 5 s, 480p, sem som).
+DEFAULT_VIDEO_MODEL = "alibaba/wan-2.2-fast"
+_VIDEO_MODELS_URL = "https://gen.pollinations.ai/video/models"
+# Usado só se o catálogo não responder (preços de 2026-10-20, em $/s).
+_FALLBACK_VIDEO_MODELS = [
+    {"id": "alibaba/wan-2.2-fast", "alias": "wan-fast", "price_per_s": 0.01, "min": 5, "max": 5, "allowed": None, "default": 5,
+     "description": "Cheap 5-second silent clips at 480p"},
+    {"id": "prunaai/p-video", "alias": "p-video", "price_per_s": 0.02, "min": 1, "max": 10, "allowed": None, "default": 5,
+     "description": "Affordable video at 720p"},
+    {"id": "bytedance/seedance-1-pro-fast", "alias": "seedance-pro", "price_per_s": 0.025, "min": 2, "max": 10, "allowed": None,
+     "default": 5, "description": "Video at 480p/720p"},
+    {"id": "x-ai/grok-imagine-video", "alias": "grok-video-pro", "price_per_s": 0.07, "min": 1, "max": 15, "allowed": None,
+     "default": 6, "description": "Short videos (720p)"},
+    {"id": "google/veo-3.1-fast", "alias": "veo", "price_per_s": 0.08, "min": 4, "max": 8, "allowed": [4, 6, 8], "default": 8,
+     "description": "Fast video at 720p/1080p"},
+    {"id": "alibaba/wan-2.6", "alias": "wan", "price_per_s": 0.1, "min": 5, "max": 15, "allowed": [5, 10, 15], "default": 5,
+     "description": "Video with sound (720p)"},
+]
+
+
+def list_video_models() -> list[dict]:
+    """Catálogo de modelos de vídeo da Pollinations com preço por segundo e durações, do mais barato
+    para o mais caro (modelos sem preço por segundo no fim). Exclui modelos que só editam vídeo existente."""
+    try:
+        resp = requests.get(_VIDEO_MODELS_URL, timeout=15)
+        resp.raise_for_status()
+        raw = resp.json()
+        raw = raw.get("data", raw) if isinstance(raw, dict) else raw
+        models = []
+        for m in raw:
+            name = m.get("name") or m.get("id")
+            if not name or m.get("max_reference_videos") and "text" not in (m.get("input_modalities") or []):
+                continue
+            if "sound effects to an existing video" in (m.get("description") or "").lower():
+                continue
+            price = (m.get("pricing") or {}).get("completionVideoSeconds")
+            aliases = m.get("aliases") or []
+            models.append({
+                "id": name, "alias": aliases[-1] if aliases else "",
+                "price_per_s": float(price) if price is not None else None,
+                "min": int(m.get("min_duration") or 1), "max": int(m.get("max_duration") or 10),
+                "allowed": m.get("allowed_durations"), "default": int(m.get("default_duration") or m.get("min_duration") or 5),
+                "description": (m.get("description") or "").strip(),
+            })
+        if models:
+            return sorted(models, key=lambda x: (x["price_per_s"] is None, x["price_per_s"] or 0))
+    except Exception as e:
+        logger.warning("Pollinations: catálogo de vídeo indisponível (%s); a usar lista fixa", e)
+    return list(_FALLBACK_VIDEO_MODELS)
+
 
 class PollinationsProvider:
     def generate(self, prompt: str, width: int | None = None, height: int | None = None) -> bytes:
@@ -57,10 +107,10 @@ class PollinationsProvider:
         
         raise RuntimeError("Falha inesperada no retry loop do Pollinations.")
 
-    def generate_video(self, prompt: str, model: str = "grok-video", aspect_ratio: str = "9:16", duration: int = 4) -> bytes:
+    def generate_video(self, prompt: str, model: str = DEFAULT_VIDEO_MODEL, aspect_ratio: str = "9:16", duration: int = 5) -> bytes:
         """
-        Gera um vídeo a partir de um prompt (MP4).
-        Modelos sugeridos: 'grok-video' (grátis/integrado via airforce), 'seedance', 'veo' (pago), 'wan' (pago).
+        Gera um vídeo a partir de um prompt (MP4). Todos os modelos de vídeo são pagos por segundo;
+        list_video_models() devolve o catálogo atual com preços e durações permitidas.
         """
         api_key = get_pollinations_api_key()
         if not api_key:

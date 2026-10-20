@@ -23,7 +23,11 @@ from instagram_poster.config import (
     get_nvidia_video_model,
 )
 from instagram_poster.db import get_upcoming_posts, get_row_by_index
-from instagram_poster.providers.provider_pollinations import PollinationsProvider
+from instagram_poster.providers.provider_pollinations import (
+    DEFAULT_VIDEO_MODEL,
+    PollinationsProvider,
+    list_video_models,
+)
 from instagram_poster.providers.provider_nvidia import NVIDIAProvider
 from instagram_poster.reel_generator import (
     get_available_music_tracks,
@@ -106,34 +110,49 @@ st.divider()
 # --- Secção 2: Geração do Vídeo ---
 st.subheader("2. Gerar Vídeo")
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _video_catalog() -> list[dict]:
+    """Modelos de vídeo da Pollinations com preço por segundo e durações (atualizado de hora a hora)."""
+    return list_video_models()
+
+
+def _model_label(m: dict) -> str:
+    price = f"{m['price_per_s']:.3f} $/s" if m["price_per_s"] is not None else "preço variável"
+    dur = (f"{'/'.join(map(str, m['allowed']))} s" if m["allowed"]
+           else f"{m['min']} s" if m["min"] == m["max"] else f"{m['min']}–{m['max']} s")
+    name = m["alias"] or m["id"].split("/")[-1]
+    return f"{name} — {price} · {dur}"
+
+
 if video_provider == "pollinations":
+    catalog = _video_catalog()
+    by_id = {m["id"]: m for m in catalog}
+    ids = list(by_id)
     col_model, col_ratio, col_dur = st.columns(3)
     with col_model:
-        vid_model = st.selectbox("Modelo", ["grok-video", "grok-video-pro", "seedance", "veo", "wan"], index=0, 
-                                 help="grok-video/pro (~6s fixo), seedance (~2s), veo (8s), wan (até 10s).")
+        vid_model = st.selectbox(
+            "Modelo (do mais barato para o mais caro)", ids,
+            index=ids.index(DEFAULT_VIDEO_MODEL) if DEFAULT_VIDEO_MODEL in ids else 0,
+            format_func=lambda i: _model_label(by_id[i]),
+            help="Preços atuais da Pollinations (1 pollen = 1 $), cobrados por segundo de vídeo gerado.")
+        st.caption(by_id[vid_model]["description"])
+    m = by_id[vid_model]
     with col_ratio:
         vid_ratio = st.selectbox("Proporção", ["9:16", "16:9", "1:1"], index=0)
     with col_dur:
-        # Limites reais baseados na API atual do Pollinations
-        max_d = 10
-        default_d = 6
-        if vid_model == "wan":
-            max_d = 10
-        elif vid_model == "veo":
-            max_d = 8
-            default_d = 8
-        elif vid_model == "seedance":
-            max_d = 2
-            default_d = 2
-        elif vid_model == "grok-video":
-            max_d = 6
-            default_d = 6
-        elif vid_model == "grok-video-pro":
-            max_d = 30
-            default_d = 30
-        
-        vid_duration = st.slider("Duração (seg)", 1, max_d, default_d)
-        st.caption(f"Nota: {vid_model} tem limite de {max_d}s.")
+        if m["allowed"]:
+            opts = sorted(int(x) for x in m["allowed"])
+            vid_duration = st.select_slider("Duração (seg)", options=opts,
+                                            value=m["default"] if m["default"] in opts else opts[0])
+        elif m["min"] == m["max"]:
+            vid_duration = m["min"]
+            st.markdown(f"**Duração:** {vid_duration} s (fixa neste modelo)")
+        else:
+            vid_duration = st.slider("Duração (seg)", m["min"], m["max"], min(max(m["default"], m["min"]), m["max"]))
+        if m["price_per_s"] is not None:
+            st.caption(f"Custo estimado: **{m['price_per_s'] * vid_duration:.2f} $** ({vid_duration} s × {m['price_per_s']:.3f} $/s)")
+        else:
+            st.caption("Custo: este modelo não tem preço fixo por segundo.")
 else:
     # NVIDIA
     col_model, col_ratio = st.columns(2)
