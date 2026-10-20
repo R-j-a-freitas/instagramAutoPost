@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-composition-variables='[
+  {"id":"quote","type":"string","label":"Quote","default":"You can say no without explaining your whole life."},
+  {"id":"handle","type":"string","label":"Handle","default":"@keepcalmnbepositive"}
+]'>
+<head>
+<meta charset="utf-8">
+<title>Quote Reel — keepcalmnbepositive</title>
+<!--
+  Reel de uma frase (1080x1920, 8 s). Renderizado por instagram_poster/quote_reel.py:
+  copia esta pasta para um diretório temporário, põe a imagem de fundo em bg.jpg e corre
+  `hyperframes render --variables-file vars.json`. Estilo: o mesmo painel escuro e texto branco
+  em negrito dos posts do feed, agora animado palavra a palavra e com final em loop.
+-->
+<script src="gsap.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #0d0f12; }
+  #reel { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #0d0f12;
+          font-family: "Inter", sans-serif; color: #ffffff; }
+  .bg { position: absolute; inset: 0; }
+  .bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Escurecimento suave ao centro para a frase ler bem sobre qualquer imagem */
+  .shade { position: absolute; inset: 0;
+           background: radial-gradient(ellipse 85% 45% at 50% 42%, rgba(0,0,0,.42), rgba(0,0,0,.12) 70%, rgba(0,0,0,.25)); }
+  /* Frase no terço central: fora das zonas tapadas pela interface dos Reels (fundo e lado direito) */
+  .stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+           justify-content: flex-start; padding: 0 110px; padding-top: 640px; gap: 34px; }
+  .panel { position: relative; padding: 56px 60px 60px; border-radius: 30px; background: rgba(0,0,0,.47);
+           max-width: 880px; }
+  .quote { font-weight: 800; line-height: 1.16; letter-spacing: -0.5px; text-align: center; margin: 0;
+           text-wrap: balance; text-shadow: 0 3px 14px rgba(0,0,0,.45); }
+  .quote .w { display: inline-block; white-space: pre; }
+  .rule { width: 120px; height: 5px; border-radius: 3px; background: #F5C46B; margin: 30px auto 0;
+          transform-origin: center; }
+  .handle { font-weight: 600; font-size: 34px; letter-spacing: .5px; color: rgba(255,255,255,.88);
+            text-shadow: 0 2px 10px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+<div id="reel" data-composition-id="reel" data-start="0" data-duration="8" data-width="1080" data-height="1920">
+  <div class="bg" id="bg"><img src="bg.jpg" alt=""></div>
+  <div class="shade" id="shade"></div>
+  <div class="stage">
+    <div class="panel" id="panel">
+      <p class="quote" id="quote"></p>
+      <div class="rule" id="rule"></div>
+    </div>
+    <div class="handle" id="handle"></div>
+  </div>
+</div>
+<script>
+  window.__timelines = window.__timelines || {};
+  const vars = (window.__hyperframes && window.__hyperframes.getVariables) ? window.__hyperframes.getVariables() : {};
+  const quote = String(vars.quote || "").trim();
+  const handle = String(vars.handle || "");
+
+  // Tamanho pela extensão da frase (determinístico)
+  const n = quote.length;
+  const size = n <= 40 ? 96 : n <= 60 ? 86 : n <= 85 ? 76 : n <= 120 ? 66 : 58;
+  const q = document.getElementById("quote");
+  q.style.fontSize = size + "px";
+  quote.split(/\s+/).forEach((word, i) => {
+    const s = document.createElement("span");
+    s.className = "w";
+    s.textContent = (i ? " " : "") + word;
+    q.appendChild(s);
+  });
+  document.getElementById("handle").textContent = handle;
+
+  const words = q.querySelectorAll(".w");
+  const tl = gsap.timeline({ paused: true });
+  // Fundo: zoom lento durante todo o Reel
+  tl.fromTo("#bg", { scale: 1.0 }, { scale: 1.08, duration: 8, ease: "none" }, 0);
+  // Entrada: painel, palavras uma a uma, linha de acento, @
+  tl.from("#panel", { opacity: 0, scale: 0.96, duration: 0.45, ease: "power2.out" }, 0.1);
+  const step = Math.min(0.13, 2.2 / Math.max(words.length, 1));  // a frase fica completa até ~2,7 s
+  tl.from(words, { opacity: 0, y: 26, duration: 0.42, ease: "power3.out", stagger: step }, 0.35);
+  const done = 0.35 + step * words.length + 0.25;
+  tl.from("#rule", { scaleX: 0, duration: 0.6, ease: "expo.out" }, done);
+  tl.from("#handle", { opacity: 0, y: 12, duration: 0.6, ease: "sine.out" }, done + 0.2);
+  // Saída suave no fim, para o Reel recomeçar em loop com as palavras a entrar
+  tl.to(["#panel", "#handle"], { opacity: 0, duration: 0.55, ease: "power1.in" }, 7.35);
+  window.__timelines["reel"] = tl;
+</script>
+</body>
+</html>

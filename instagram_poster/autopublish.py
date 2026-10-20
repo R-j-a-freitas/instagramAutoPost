@@ -558,7 +558,7 @@ def _try_publish_quote_reel_impl(today: str) -> bool:
     try:
         from instagram_poster import ig_client
         from instagram_poster.db import get_published_posts_with_image
-        from instagram_poster.quote_reel import create_quote_reel, get_used_row_indices, mark_used
+        from instagram_poster.quote_reel import COVER_OFFSET_MS, create_quote_reel, get_used_row_indices, mark_used
         from instagram_poster.reel_generator import upload_video_bytes
     except Exception as e:
         logger.warning("Quote reel: import falhou: %s", e)
@@ -573,7 +573,8 @@ def _try_publish_quote_reel_impl(today: str) -> bool:
     try:
         video_bytes = create_quote_reel(post)
         video_url = upload_video_bytes(video_bytes, public_id_prefix="ig_quote_reel")
-        creation_id = ig_client.create_reel(video_url=video_url, caption=post.get("caption") or post["image_text"])
+        creation_id = ig_client.create_reel(video_url=video_url, caption=post.get("caption") or post["image_text"],
+                                            thumb_offset_ms=COVER_OFFSET_MS)
         media_id = ig_client.publish_media(creation_id, max_wait=240)
         mark_used(int(post["row_index"]), media_id=media_id)
         _save_quote_reel_state({"last_date": today, "row": post.get("row_index"), "status": "publicado", "media_id": media_id})

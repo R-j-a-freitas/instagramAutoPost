@@ -1,6 +1,8 @@
 """
-Reel de uma frase: vídeo vertical nativo 1080x1920, ~8 s, com a frase do post legível desde o
-primeiro frame (é também a capa) e um zoom lento sobre uma imagem gerada já em 9:16.
+Reel de uma frase: vídeo vertical nativo 1080x1920, 8 s, com zoom lento sobre uma imagem gerada
+já em 9:16 e a frase a entrar palavra a palavra (modelo HyperFrames em assets/hyperframes/quote_reel;
+se o HyperFrames falhar, plano B em ffmpeg com a frase fixa desde o primeiro frame). A capa do Reel
+é o momento COVER_OFFSET_MS, com a frase completa.
 
 Substitui os Reels "slideshow" (5 imagens quadradas x 8 s, fundo desfocado), cujo tempo médio
 de visualização era ~3 s. Usa o mesmo estilo de texto dos posts do feed (fonte e caixa da marca).
@@ -11,6 +13,7 @@ vídeo leva o Instagram a silenciar ou limitar o Reel). Sem faixas, o Reel sai s
 import io
 import json
 import logging
+import os
 import random
 import shutil
 import subprocess
@@ -138,18 +141,69 @@ def _text_overlay(quote: str) -> bytes:
 
 def create_quote_reel(post: dict[str, Any], duration: float = 8.0, audio_path: Optional[str] = None,
                       audio_volume: float = 0.35) -> bytes:
-    """Gera o MP4 (H.264/AAC, 1080x1920, 30 fps) e devolve os bytes."""
+    """Gera o MP4 (H.264/AAC, 1080x1920, 30 fps) e devolve os bytes.
+    Motor principal: modelo HyperFrames (palavras a entrar uma a uma); plano B: ffmpeg (texto fixo)."""
     quote = (post.get("image_text") or "").strip()
     if not quote:
         raise ValueError("Post sem image_text")
-    ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
     if audio_path is None:
         tracks = free_music_tracks()
         audio_path = str(random.choice(tracks)) if tracks else None
+    background = _vertical_background(post)
+    try:
+        return _render_hyperframes(quote, background, audio_path, audio_volume)
+    except Exception as e:
+        logger.warning("Quote reel: HyperFrames falhou (%s); a usar o modelo ffmpeg", e)
+        return _render_ffmpeg(quote, background, duration, audio_path, audio_volume)
+
+
+# Modelo animado (assets/hyperframes/quote_reel) e o CLI do HyperFrames instalado com o Herk Edit Kit.
+HYPERFRAMES_TEMPLATE = _PROJECT_ROOT / "assets" / "hyperframes" / "quote_reel"
+HYPERFRAMES_BIN = os.environ.get(
+    "HYPERFRAMES_BIN", str(Path.home() / "video/repos/HerkEditKit/node_modules/.bin/hyperframes"))
+HYPERFRAMES_DURATION = 8.0  # fixo no modelo (data-duration)
+COVER_OFFSET_MS = 3500  # capa do Reel: frase completa, linha e @ já visíveis
+
+
+def _render_hyperframes(quote: str, background: bytes, audio_path: Optional[str], audio_volume: float) -> bytes:
+    if not Path(HYPERFRAMES_BIN).exists():
+        raise FileNotFoundError(f"HyperFrames não encontrado em {HYPERFRAMES_BIN}")
+    with tempfile.TemporaryDirectory(prefix="quote_reel_hf_") as td:
+        proj = Path(td, "proj")
+        shutil.copytree(HYPERFRAMES_TEMPLATE, proj)
+        (proj / "bg.jpg").write_bytes(background)
+        vars_file = Path(td, "vars.json")
+        vars_file.write_text(json.dumps({"quote": quote, "handle": HANDLE}, ensure_ascii=False), encoding="utf-8")
+        silent = Path(td, "silent.mp4")
+        r = subprocess.run([HYPERFRAMES_BIN, "render", "--variables-file", str(vars_file), "--output", str(silent),
+                            "--quiet", "--strict"], cwd=proj, capture_output=True, text=True, timeout=600)
+        if r.returncode != 0 or not silent.exists():
+            raise RuntimeError(f"hyperframes render falhou: {(r.stderr or r.stdout)[-500:]}")
+        if not audio_path:
+            logger.warning("Quote reel sem som: põe faixas de uso livre em %s", FREE_MUSIC_DIR)
+            return silent.read_bytes()
+        out = Path(td, "reel.mp4")
+        d = HYPERFRAMES_DURATION
+        ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+        r = subprocess.run([ffmpeg, "-y", "-v", "error", "-i", str(silent), "-i", audio_path, "-filter_complex",
+                            f"[1:a]atrim=0:{d},asetpts=PTS-STARTPTS,volume={audio_volume},"
+                            f"afade=t=in:st=0:d=0.4,afade=t=out:st={d - 1.2}:d=1.2[a]",
+                            "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+                            "-t", str(d), "-movflags", "+faststart", str(out)],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0 or not out.exists():
+            raise RuntimeError(f"ffmpeg (áudio) falhou: {r.stderr[-500:]}")
+        return out.read_bytes()
+
+
+def _render_ffmpeg(quote: str, background: bytes, duration: float, audio_path: Optional[str],
+                   audio_volume: float) -> bytes:
+    """Modelo simples (plano B): texto fixo desde o primeiro frame e zoom lento."""
+    ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
     frames = int(round(duration * FPS))
     with tempfile.TemporaryDirectory(prefix="quote_reel_") as td:
         bg, ov, out = Path(td, "bg.jpg"), Path(td, "ov.png"), Path(td, "reel.mp4")
-        bg.write_bytes(_vertical_background(post))
+        bg.write_bytes(background)
         ov.write_bytes(_text_overlay(quote))
         # Zoom lento 1.00 -> 1.06 sobre uma versão 2x da imagem (evita o tremer do zoompan).
         vf = (f"[0:v]scale={2 * W}:{2 * H}:force_original_aspect_ratio=increase,crop={2 * W}:{2 * H},"

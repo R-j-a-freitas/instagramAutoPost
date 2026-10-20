@@ -221,10 +221,11 @@ def create_story(image_url: Optional[str] = None, video_url: Optional[str] = Non
     return creation_id
 
 
-def create_reel(video_url: str, caption: str) -> str:
+def create_reel(video_url: str, caption: str, thumb_offset_ms: Optional[int] = None) -> str:
     """
     Cria um content container para um Reel (vídeo).
     POST /{ig-user-id}/media com media_type=REELS e video_url.
+    thumb_offset_ms: momento do vídeo usado como capa (por omissão o Instagram usa o primeiro frame).
     Devolve o creation_id para usar em publish_media(creation_id, max_wait=180).
     """
     _check_config()
@@ -237,6 +238,8 @@ def create_reel(video_url: str, caption: str) -> str:
         "video_url": video_url,
         "caption": caption,
     }
+    if thumb_offset_ms is not None:
+        payload["thumb_offset"] = int(thumb_offset_ms)
     logger.info("A criar Reel container para video_url=%s", video_url[:80] + "..." if len(video_url) > 80 else video_url)
     resp = requests.post(url, json=payload, headers=headers, timeout=30)
     try:
