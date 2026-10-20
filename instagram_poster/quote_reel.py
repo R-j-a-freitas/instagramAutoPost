@@ -224,3 +224,17 @@ def _render_ffmpeg(quote: str, background: bytes, duration: float, audio_path: O
         if not audio_path:
             logger.warning("Quote reel sem som: põe faixas de uso livre em %s", FREE_MUSIC_DIR)
         return out.read_bytes()
+
+
+def cover_from_video(video_bytes: bytes, offset_ms: int = COVER_OFFSET_MS) -> bytes:
+    """JPEG 1080x1920 do frame em offset_ms (frase completa), para usar como cover_url do Reel."""
+    ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+    with tempfile.TemporaryDirectory(prefix="quote_reel_cover_") as td:
+        src, out = Path(td, "v.mp4"), Path(td, "cover.jpg")
+        src.write_bytes(video_bytes)
+        r = subprocess.run([ffmpeg, "-y", "-v", "error", "-ss", f"{offset_ms / 1000:.3f}", "-i", str(src),
+                            "-frames:v", "1", "-q:v", "2", str(out)], capture_output=True, text=True, timeout=120)
+        if r.returncode != 0 or not out.exists():
+            raise RuntimeError(f"ffmpeg (capa) falhou: {r.stderr[-300:]}")
+        return out.read_bytes()
+
