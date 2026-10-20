@@ -8,3 +8,4 @@ NÃO uses aqui as faixas de assets/music/MUSIC (covers e músicas comerciais tir
 o Instagram deteta música com direitos de autor colada no vídeo e silencia ou limita o Reel.
 
 Se esta pasta não tiver faixas, os Reels de frase saem sem som.
+Fontes e licenças das faixas atuais: LICENCAS.md.

@@ -140,7 +140,7 @@ def _text_overlay(quote: str) -> bytes:
 
 
 def create_quote_reel(post: dict[str, Any], duration: float = 8.0, audio_path: Optional[str] = None,
-                      audio_volume: float = 0.35) -> bytes:
+                      audio_volume: float = 0.8) -> bytes:
     """Gera o MP4 (H.264/AAC, 1080x1920, 30 fps) e devolve os bytes.
     Motor principal: modelo HyperFrames (palavras a entrar uma a uma); plano B: ffmpeg (texto fixo)."""
     quote = (post.get("image_text") or "").strip()
@@ -186,7 +186,7 @@ def _render_hyperframes(quote: str, background: bytes, audio_path: Optional[str]
         d = HYPERFRAMES_DURATION
         ffmpeg = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
         r = subprocess.run([ffmpeg, "-y", "-v", "error", "-i", str(silent), "-i", audio_path, "-filter_complex",
-                            f"[1:a]atrim=0:{d},asetpts=PTS-STARTPTS,volume={audio_volume},"
+                            f"[1:a]silenceremove=start_periods=1:start_threshold=-45dB,atrim=0:{d},asetpts=PTS-STARTPTS,volume={audio_volume},"
                             f"afade=t=in:st=0:d=0.4,afade=t=out:st={d - 1.2}:d=1.2[a]",
                             "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
                             "-t", str(d), "-movflags", "+faststart", str(out)],
@@ -212,7 +212,7 @@ def _render_ffmpeg(quote: str, background: bytes, duration: float, audio_path: O
         cmd = [ffmpeg, "-y", "-v", "error", "-loop", "1", "-framerate", str(FPS), "-i", str(bg), "-i", str(ov)]
         if audio_path:
             cmd += ["-i", audio_path]
-            vf += (f";[2:a]atrim=0:{duration},asetpts=PTS-STARTPTS,volume={audio_volume},"
+            vf += (f";[2:a]silenceremove=start_periods=1:start_threshold=-45dB,atrim=0:{duration},asetpts=PTS-STARTPTS,volume={audio_volume},"
                    f"afade=t=in:st=0:d=0.4,afade=t=out:st={duration - 1.2}:d=1.2[a]")
         cmd += ["-filter_complex", vf, "-map", "[v]"]
         cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "128k"] if audio_path else []
