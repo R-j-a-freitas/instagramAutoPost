@@ -34,7 +34,7 @@ st.caption("Monitoriza as Stories publicadas e publica uma Story a partir de um 
 
 from instagram_poster import autopublish, image_generator
 from instagram_poster.scheduler import publish_story_from_post
-from instagram_poster.sheets_client import get_published_posts_with_image, get_published_rows_missing_image_url, update_image_url
+from instagram_poster.db import get_published_posts_with_image, get_published_rows_missing_image_url, update_image_url
 
 # Métrica (get_log primeiro para recarregar do ficheiro se outro processo gravou)
 _ = autopublish.get_log()
@@ -46,10 +46,10 @@ st.divider()
 # Reparar: linhas já publicadas sem ImageURL (ex.: publicações antigas)
 rows_missing_url = get_published_rows_missing_image_url()
 if rows_missing_url:
-    with st.expander(f"Reparar: {len(rows_missing_url)} linha(s) publicada(s) sem ImageURL no Sheet", expanded=True):
+    with st.expander(f"Reparar: {len(rows_missing_url)} linha(s) publicada(s) sem ImageURL na BD", expanded=True):
         st.caption(
-            "Se publicaste posts pela app antes de guardar o URL, ou editaste o Sheet à mão, "
-            "estas linhas têm Published=yes mas ImageURL vazio. Preenche agora: gera a imagem (Cloudinary) e grava o URL no Sheet — sem republicar no Instagram."
+            "Se publicaste posts pela app antes de guardar o URL, ou editaste a base de dados à mão, "
+            "estas linhas têm Published=yes mas ImageURL vazio. Preenche agora: gera a imagem (Cloudinary) e grava o URL na BD — sem republicar no Instagram."
         )
         if st.button("Preencher ImageURL nestas linhas (gerar imagem e gravar)", key="fill_image_url"):
             progress = st.progress(0, text="A processar...")
@@ -80,7 +80,7 @@ if rows_missing_url:
 st.subheader("Publicar Story manualmente")
 posts = get_published_posts_with_image()
 _no_posts_msg = (
-    "Nenhum post publicado com imagem no Sheet. "
+    "Nenhum post publicado com imagem na base de dados. "
     "Se já tens publicações no Instagram, usa o bloco «Reparar: linha(s) publicada(s) sem ImageURL» acima para preencher o ImageURL; ou publica um novo post pela app (o URL passa a ser guardado automaticamente)."
 )
 
@@ -149,7 +149,7 @@ with st.expander("Publicar Story a partir de um post aleatório", expanded=True)
                     st.error(message)
         except Exception as e:
             st.error(f"Erro: {e}")
-            st.info("Verifica a ligação ao Google Sheet e ao Instagram na Configuração.")
+            st.info("Verifica a ligação à base de dados e ao Instagram na Configuração.")
 
 st.divider()
 
@@ -184,7 +184,7 @@ with st.expander("Publicar Story a partir de um post à tua escolha", expanded=T
                     st.error(message)
             except Exception as e:
                 st.error(f"Erro: {e}")
-                st.info("Verifica a ligação ao Google Sheet e ao Instagram na Configuração.")
+                st.info("Verifica a ligação à base de dados e ao Instagram na Configuração.")
     else:
         st.caption("Sem posts publicados para escolher.")
 

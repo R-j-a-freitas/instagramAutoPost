@@ -34,10 +34,9 @@ from instagram_poster.providers import AVAILABLE_PROVIDERS
 from instagram_poster.sheets_client import (
     authorize_google_sheets,
     fetch_google_token_from_url,
-    get_all_rows_with_image_text,
     get_google_auth_url,
-    update_gemini_prompt,
 )
+from instagram_poster.db import get_all_rows_with_image_text, update_gemini_prompt
 from instagram_poster.verification import (
     check_instagram_api_status,
     verify_all_connections,
@@ -1006,20 +1005,20 @@ if st.button("Guardar — Geração de conteúdo", key="save_content_generation"
 
 st.divider()
 
-# ========== 8. PREENCHER PROMPT DE IMAGEM NO SHEET ==========
-st.subheader("8. Preencher Gemini_Prompt no Sheet")
+# ========== 8. PREENCHER PROMPT DE IMAGEM NA BASE DE DADOS ==========
+st.subheader("8. Preencher Gemini_Prompt na Base de Dados")
 st.caption(
-    "Gera descrições visuais (sem texto) a partir da Image Text de cada linha, "
+    "Gera descrições visuais (sem texto) a partir da Image Text de cada post, "
     "usando IA para converter a quote numa cena. A quote é sobreposta na imagem ao publicar."
 )
-if st.button("Preencher Gemini_Prompt no Sheet"):
+if st.button("Preencher Gemini_Prompt na Base de Dados"):
     _apply_config_from_session()
     try:
         from instagram_poster.image_generator import _quote_to_scene_prompt
 
         rows = get_all_rows_with_image_text()
         if not rows:
-            st.warning("Nenhuma linha com Image Text encontrada.")
+            st.warning("Nenhum post com Image Text encontrado.")
         else:
             progress = st.progress(0, text="A converter quotes em descrições visuais...")
             total = len(rows)
@@ -1031,13 +1030,12 @@ if st.button("Preencher Gemini_Prompt no Sheet"):
                 scene_prompt = _quote_to_scene_prompt(image_text)
                 update_gemini_prompt(rec["row_index"], scene_prompt)
                 ok_count += 1
-                progress.progress((i + 1) / total, text=f"Linha {rec['row_index']}... ({i + 1}/{total})")
+                progress.progress((i + 1) / total, text=f"Post {rec['row_index']}... ({i + 1}/{total})")
             progress.empty()
-            st.success(f"Gemini_Prompt preenchido em {ok_count} linhas (descrição visual sem texto).")
+            st.success(f"Gemini_Prompt preenchido em {ok_count} posts (descrição visual sem texto).")
             st.rerun()
     except Exception as e:
         st.error(f"Erro: {e}")
-        st.info("Liga o Google Sheets primeiro.")
 
 st.divider()
 

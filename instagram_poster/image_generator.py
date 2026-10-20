@@ -141,37 +141,48 @@ def generate_image_from_prompt(prompt: str) -> bytes:
     return provider.generate(prompt)
 
 
+FEED_WIDTH = 1080
+FEED_HEIGHT = 1350  # 4:5 portrait — Instagram's algorithm-preferred feed ratio
+
+# Fixed brand look applied identically to every slide of every post, regardless of what
+# the AI-generated background looks like, so the account reads as one consistent brand.
+BRAND_TEXT_COLOR = (255, 255, 255, 245)
+BRAND_TEXT_SHADOW_COLOR = (0, 0, 0, 180)
+BRAND_BOX_FILL_COLOR = (0, 0, 0, 120)
+
+
 def _normalize_to_feed_size(image_bytes: bytes) -> bytes:
     """
-    Garante que a imagem tem exatamente 1080x1080px (resolução ideal para o feed do Instagram).
-    Se a imagem for mais pequena ou não quadrada, é redimensionada mantendo as proporções
-    e centrada sobre um fundo desfocado da própria imagem (mesmo estilo das Stories).
+    Garante que a imagem tem exatamente 1080x1350px (4:5, proporção preferida do feed do
+    Instagram). Se a imagem for mais pequena ou tiver outra proporção, é redimensionada
+    mantendo as proporções e centrada sobre um fundo desfocado da própria imagem (mesmo
+    estilo das Stories).
     """
     from PIL import Image, ImageFilter
 
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     w, h = img.size
-    target = 1080
+    target_w, target_h = FEED_WIDTH, FEED_HEIGHT
 
     # Se já estiver no tamanho certo, não faz nada (mas normaliza sempre para JPEG:
     # a API do Instagram só aceita JPEG para imagens; PNG causa 400 Bad Request)
-    if w == target and h == target:
+    if w == target_w and h == target_h:
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=95)
         return buf.getvalue()
 
-    # Fundo: imagem esticada para 1080x1080 e desfocada
-    bg = img.resize((target, target), Image.Resampling.LANCZOS)
+    # Fundo: imagem esticada para 1080x1350 e desfocada
+    bg = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
     bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
 
-    # Imagem central: caber dentro de 1080x1080 mantendo proporção
-    scale = min(target / w, target / h)
+    # Imagem central: caber dentro de 1080x1350 mantendo proporção
+    scale = min(target_w / w, target_h / h)
     new_w = int(w * scale)
     new_h = int(h * scale)
     center_img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    x = (target - new_w) // 2
-    y = (target - new_h) // 2
+    x = (target_w - new_w) // 2
+    y = (target_h - new_h) // 2
     bg.paste(center_img, (x, y))
 
     buf = io.BytesIO()
@@ -180,15 +191,21 @@ def _normalize_to_feed_size(image_bytes: bytes) -> bytes:
 
 
 def _load_text_font(size: int):
-    """Tenta carregar uma fonte truetype legível; devolve (font, tamanho_efectivo)."""
+    """
+    Tenta carregar a fonte da marca (bold sans-serif, consistente em todos os posts);
+    devolve (font, tamanho_efectivo).
+    """
     from PIL import ImageFont
 
     font_paths = [
-        "C:/Windows/Fonts/georgia.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/times.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # Linux (fonts-liberation / fonts-dejavu-core, normalmente pré-instaladas)
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        # Windows
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
+        # macOS
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
     ]
     for fp in font_paths:
@@ -201,12 +218,12 @@ def _load_text_font(size: int):
 
 def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
     """
-    Normaliza a imagem para 1080x1080 (feed Instagram) e sobrepõe o texto da quote centrado.
-    Usa Pillow para renderizar tipografia legível com sombra.
+    Normaliza a imagem para 1080x1350 (feed Instagram, 4:5) e sobrepõe o texto da quote
+    centrado. Usa Pillow para renderizar tipografia legível com sombra.
     """
     from PIL import Image, ImageDraw
 
-    # Normalizar para 1080x1080 antes de qualquer sobreposição
+    # Normalizar para 1080x1350 antes de qualquer sobreposição
     image_bytes = _normalize_to_feed_size(image_bytes)
 
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
@@ -247,7 +264,7 @@ def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
     draw.rounded_rectangle(
         [box_x, box_y, box_x + box_w, box_y + box_h],
         radius=int(min(w, h) * 0.02),
-        fill=(0, 0, 0, 120),
+        fill=BRAND_BOX_FILL_COLOR,
     )
 
     # Desenhar texto linha a linha, centrado
@@ -257,9 +274,9 @@ def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
         x = (w - lw) // 2
 
         # Sombra
-        draw.text((x + 2, y_cursor + 2), line, font=font, fill=(0, 0, 0, 180))
+        draw.text((x + 2, y_cursor + 2), line, font=font, fill=BRAND_TEXT_SHADOW_COLOR)
         # Texto principal
-        draw.text((x, y_cursor), line, font=font, fill=(255, 255, 255, 245))
+        draw.text((x, y_cursor), line, font=font, fill=BRAND_TEXT_COLOR)
 
         y_cursor += line_heights[i] + line_spacing
 
@@ -271,9 +288,10 @@ def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
 
 def render_explanation_card(image_bytes: bytes, explanation_text: str) -> bytes:
     """
-    Cria o 2º slide de um carrossel: a mesma imagem-base do slide 1, mas com um fundo
-    mais desfocado/escurecido (para dar contraste a um parágrafo mais longo) e o texto
-    de explicação do dia (Slide2 Text) sobreposto, centrado verticalmente.
+    Cria um slide de explicação de um carrossel (slide 2+): a mesma imagem-base do slide 1,
+    mas com um fundo mais desfocado/escurecido (para dar contraste a um parágrafo mais longo)
+    e um dos parágrafos de Slide2 Text sobreposto, centrado verticalmente. Chamada uma vez
+    por parágrafo para gerar todos os slides de explicação com a mesma identidade visual.
     """
     from PIL import Image, ImageDraw, ImageFilter
 
@@ -310,8 +328,8 @@ def render_explanation_card(image_bytes: bytes, explanation_text: str) -> bytes:
     for i, line in enumerate(lines):
         lw = line_widths[i]
         x = (w - lw) // 2
-        draw.text((x + 2, y_cursor + 2), line, font=font, fill=(0, 0, 0, 160))
-        draw.text((x, y_cursor), line, font=font, fill=(255, 255, 255, 245))
+        draw.text((x + 2, y_cursor + 2), line, font=font, fill=BRAND_TEXT_SHADOW_COLOR)
+        draw.text((x, y_cursor), line, font=font, fill=BRAND_TEXT_COLOR)
         y_cursor += line_heights[i] + line_spacing
 
     buf = io.BytesIO()
@@ -601,33 +619,51 @@ def get_image_url_from_prompt(
     return upload_image_bytes(image_bytes, public_id_prefix=public_id_prefix)
 
 
+_MAX_CAROUSEL_SLIDES = 6  # inclui o slide 1 (hook); a Graph API do Instagram permite até 10
+
+
+def _split_carousel_paragraphs(explanation_text: str) -> list[str]:
+    """
+    Divide Slide2 Text em parágrafos (um por slide de explicação), separados por uma
+    linha em branco. Texto sem separador continua a dar exactamente 1 parágrafo
+    (comportamento anterior: carrossel de 2 slides), mantendo compatibilidade com
+    linhas antigas do Sheet.
+    """
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", explanation_text.strip()) if p.strip()]
+    return paragraphs[: _MAX_CAROUSEL_SLIDES - 1]
+
+
 def get_carousel_slides_from_prompt(
     prompt: str,
     quote_text: str,
     explanation_text: str,
     use_full_prompt: bool = True,
     public_id_prefix: str = "ig_post",
-) -> tuple[str, str]:
+) -> list[str]:
     """
-    Gera um carrossel de 2 slides a partir de UMA única imagem AI (evita gerar/pagar a
-    imagem duas vezes e garante coerência visual entre os slides):
-    - Slide 1: a imagem AI com a quote (Image Text) sobreposta — igual ao post normal.
-    - Slide 2: a mesma imagem-base, com fundo mais desfocado/escurecido, com o texto de
-      explicação do dia (Slide2 Text) sobreposto.
-    Devolve (slide1_url, slide2_url).
+    Gera um carrossel editorial (2 a 6 slides) a partir de UMA única imagem AI (evita
+    gerar/pagar a imagem várias vezes e garante coerência visual entre os slides):
+    - Slide 1: a imagem AI com a quote (Image Text) sobreposta — o "hook" — igual ao post normal.
+    - Slides seguintes: a mesma imagem-base, com fundo mais desfocado/escurecido, um por
+      cada parágrafo de Slide2 Text (parágrafos separados por linha em branco).
+    Devolve a lista de URLs, uma por slide, pela ordem de publicação.
     """
     if not (prompt or "").strip():
         raise ValueError("O prompt está vazio; não é possível gerar a imagem.")
-    if not (explanation_text or "").strip():
-        raise ValueError("Slide2 Text está vazio; não é possível gerar o 2º slide do carrossel.")
+
+    paragraphs = _split_carousel_paragraphs(explanation_text)
+    if not paragraphs:
+        raise ValueError("Slide2 Text está vazio; não é possível gerar os slides de explicação do carrossel.")
 
     final_prompt = _resolve_final_prompt(prompt, quote_text, use_full_prompt)
-    logger.info("Prompt final para carrossel: %s", final_prompt[:150])
+    logger.info("Prompt final para carrossel (%d slides): %s", len(paragraphs) + 1, final_prompt[:150])
     base_image_bytes = generate_image_from_prompt(final_prompt)
 
     slide1_bytes = overlay_quote_on_image(base_image_bytes, quote_text) if quote_text.strip() else _normalize_to_feed_size(base_image_bytes)
-    slide2_bytes = render_explanation_card(base_image_bytes, explanation_text)
+    slide_urls = [upload_image_bytes(slide1_bytes, public_id_prefix=f"{public_id_prefix}_s1")]
 
-    slide1_url = upload_image_bytes(slide1_bytes, public_id_prefix=f"{public_id_prefix}_s1")
-    slide2_url = upload_image_bytes(slide2_bytes, public_id_prefix=f"{public_id_prefix}_s2")
-    return slide1_url, slide2_url
+    for i, paragraph in enumerate(paragraphs, start=2):
+        slide_bytes = render_explanation_card(base_image_bytes, paragraph)
+        slide_urls.append(upload_image_bytes(slide_bytes, public_id_prefix=f"{public_id_prefix}_s{i}"))
+
+    return slide_urls

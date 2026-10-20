@@ -35,6 +35,10 @@ assets/reels_used_rows.json
 assets/music/MUSIC/*.mp3
 .config_overrides.json
 content_system_prompt_override.txt
+posts.db
+posts.db-wal
+posts.db-shm
+posts.db-journal
 .comment_autoreply.lock
 *.log
 scratch/

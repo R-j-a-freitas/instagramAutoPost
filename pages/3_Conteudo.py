@@ -1,6 +1,6 @@
 """
 Criacao de conteudo para Instagram via IA.
-Gera N posts com quote, caption, e prompt de imagem, depois adiciona ao Google Sheet.
+Gera N posts com quote, caption, e prompt de imagem, depois adiciona à base de dados interna.
 """
 import json
 import logging
@@ -17,7 +17,7 @@ from instagram_poster.config import (
     get_content_system_prompt_override,
     get_default_content_system_prompt,
 )
-from instagram_poster.sheets_client import append_rows, get_last_date
+from instagram_poster.db import append_rows, get_last_date
 from instagram_poster.text_generator import generate_text
 
 logger = logging.getLogger(__name__)
@@ -70,19 +70,26 @@ def _posts_to_dataframe(posts: list[dict], start_date: date) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _dataframe_to_sheet_rows(df: pd.DataFrame) -> list[list[str]]:
-    """
-    Converte DataFrame para lista de listas (ordem das colunas do Sheet).
-    Nota: "Post Type" e "Slide2 Text" (colunas 10-11) só são preenchidas correctamente
-    se essas colunas existirem nessa posição no Google Sheet. Sem elas, o post é sempre
-    tratado como "single" (comportamento anterior, sem quebrar nada).
-    """
-    col_order = ["Date", "Time", "Image Text", "Caption", "Gemini_Prompt",
-                 "Status", "Published", "ImageURL", "Image Prompt",
-                 "Post Type", "Slide2 Text"]
+_UI_TO_DB_COLUMNS = {
+    "Date": "date",
+    "Time": "time",
+    "Image Text": "image_text",
+    "Caption": "caption",
+    "Gemini_Prompt": "gemini_prompt",
+    "Status": "status",
+    "Published": "published",
+    "ImageURL": "image_url",
+    "Image Prompt": "image_prompt",
+    "Post Type": "post_type",
+    "Slide2 Text": "slide2_text",
+}
+
+
+def _dataframe_to_posts(df: pd.DataFrame) -> list[dict]:
+    """Converte o DataFrame (colunas com nomes amigáveis) em dicts prontos para a base de dados."""
     result = []
     for _, row in df.iterrows():
-        result.append([str(row.get(c, "")) for c in col_order])
+        result.append({db_key: str(row.get(ui_key, "") or "") for ui_key, db_key in _UI_TO_DB_COLUMNS.items()})
     return result
 
 
@@ -104,15 +111,15 @@ with nav3:
         st.switch_page("pages/2_Posts.py")
 
 st.title("Criacao de conteudo")
-st.caption("Gera novos posts com IA e adiciona directamente ao Google Sheet.")
+st.caption("Gera novos posts com IA e adiciona directamente à base de dados interna.")
 st.info(
-    "Alguns posts podem ser gerados como **carrossel** (2 slides: quote + explicação do dia). "
-    "Para isso funcionar, o Google Sheet precisa das colunas **Post Type** e **Slide2 Text** "
-    "como colunas 10 e 11 (a seguir a Image Prompt). Sem elas, estes posts são publicados como imagem única.",
+    "A maioria dos posts é gerada como **carrossel editorial** (hook + 3-5 slides de "
+    "explicação, um por parágrafo em **Slide2 Text** separado por linha em branco — 4 a 6 "
+    "slides no total).",
     icon="🎠",
 )
 
-# Determinar data inicial (dia seguinte ao ultimo post no Sheet)
+# Determinar data inicial (dia seguinte ao ultimo post na base de dados)
 _default_start = date.today() + timedelta(days=1)
 try:
     _last = get_last_date()
@@ -156,7 +163,7 @@ if st.button("Gerar conteudo", type="primary"):
 # Pre-visualizacao e edicao
 if "generated_content" in st.session_state and st.session_state["generated_content"] is not None:
     st.subheader("Pre-visualizacao")
-    st.caption("Edita os campos antes de adicionar ao Sheet. Clica numa celula para editar.")
+    st.caption("Edita os campos antes de adicionar à base de dados. Clica numa celula para editar.")
 
     df = st.session_state["generated_content"]
     edited_df = st.data_editor(
@@ -181,15 +188,15 @@ if "generated_content" in st.session_state and st.session_state["generated_conte
 
     col_act1, col_act2, _ = st.columns([1, 1, 2])
     with col_act1:
-        if st.button("Adicionar ao Sheet", type="primary", key="add_to_sheet"):
+        if st.button("Adicionar à base de dados", type="primary", key="add_to_db"):
             try:
-                rows = _dataframe_to_sheet_rows(edited_df)
+                rows = _dataframe_to_posts(edited_df)
                 count = append_rows(rows)
-                st.success(f"{count} posts adicionados ao Google Sheet!")
+                st.success(f"{count} posts adicionados à base de dados!")
                 st.session_state["generated_content"] = None
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro ao escrever no Sheet: {e}")
+                st.error(f"Erro ao gravar na base de dados: {e}")
     with col_act2:
         if st.button("Descartar", key="discard_content"):
             st.session_state["generated_content"] = None

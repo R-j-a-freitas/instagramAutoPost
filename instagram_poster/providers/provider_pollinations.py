@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://gen.pollinations.ai/image/{prompt}"
 _DEFAULT_PARAMS = {
     "width": "1080",
-    "height": "1080",
+    "height": "1350",
     "model": "flux",
     "nologo": "true",
     "enhance": "false",

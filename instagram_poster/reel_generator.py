@@ -182,7 +182,7 @@ def get_posts_for_reel(n: int, allow_reuse: bool = False) -> list[dict[str, Any]
     Se allow_reuse for True, devolve N posts sorteados aleatoriamente de **todo** o arquivo publicado.
     """
     import random
-    from instagram_poster.sheets_client import get_published_posts_with_image
+    from instagram_poster.db import get_published_posts_with_image
     all_posts = get_published_posts_with_image()
     if not all_posts:
         return []

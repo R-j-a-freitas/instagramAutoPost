@@ -603,7 +603,7 @@ def _try_publish_story_reuse_impl() -> bool:
         )
         from instagram_poster import image_generator, ig_client
         from instagram_poster.reel_generator import get_available_music_tracks
-        from instagram_poster.sheets_client import get_published_posts_with_image
+        from instagram_poster.db import get_published_posts_with_image
     except Exception as e:
         logger.warning("Autopublish Story reuse: import falhou: %s", e)
         return False

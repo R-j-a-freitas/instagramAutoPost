@@ -1,5 +1,5 @@
 """
-Migra media do Cloudinary para o servidor local e actualiza o Sheet.
+Migra media do Cloudinary para o servidor local e actualiza a base de dados.
 
 Uso:
   python scripts/migrate_cloudinary_to_local.py
@@ -7,7 +7,6 @@ Uso:
 
 Pré-requisitos:
   - .env com MEDIA_BACKEND=local_http, MEDIA_ROOT, MEDIA_BASE_URL
-  - Credenciais Google Sheets configuradas
 """
 import argparse
 import logging
@@ -25,7 +24,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from instagram_poster.config import get_media_backend, get_media_base_url, get_media_root
-from instagram_poster.sheets_client import get_all_rows_with_image_url, update_image_url
+from instagram_poster.db import get_all_rows_with_image_url, update_image_url
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -125,7 +124,7 @@ def migrate(dry_run: bool = False) -> None:
             update_image_url(row_index, new_url)
             logger.info("Linha %s: %s -> %s", row_index, url[:50] + "...", new_url)
         except Exception as e:
-            logger.warning("Linha %s: ficheiro gravado mas falha ao actualizar Sheet: %s", row_index, e)
+            logger.warning("Linha %s: ficheiro gravado mas falha ao actualizar BD: %s", row_index, e)
 
 
 def main():

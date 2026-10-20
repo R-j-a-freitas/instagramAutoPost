@@ -10,7 +10,7 @@ from instagram_poster import config
 from instagram_poster.config import get_media_backend, get_media_base_url
 from instagram_poster.providers import AVAILABLE_PROVIDERS
 from instagram_poster.scheduler import run_publish_next, run_publish_row
-from instagram_poster.sheets_client import get_upcoming_posts
+from instagram_poster.db import delete_post, get_all_posts, get_upcoming_posts, update_post
 from instagram_poster.verification import verify_all_connections
 
 if "last_publish_result" not in st.session_state:
@@ -55,12 +55,12 @@ def _render_status_sidebar():
     """Renderiza o painel de estado dos serviços na sidebar."""
     st.sidebar.markdown("### Estado dos serviços")
 
-    # Google Sheets
-    sheet_id = config.get_ig_sheet_id()
-    if sheet_id:
-        st.sidebar.success(f"Sheets: `...{sheet_id[-8:]}`")
-    else:
-        st.sidebar.error("Sheets: não configurado")
+    # Base de dados interna
+    try:
+        n_db_posts = len(get_all_posts())
+        st.sidebar.success(f"Base de Dados: {n_db_posts} posts")
+    except Exception as e:
+        st.sidebar.error(f"Base de Dados: {e}")
 
     # Instagram
     ig_id = config.get_ig_business_id()
@@ -161,77 +161,173 @@ n_posts = st.sidebar.slider("N.º de posts a mostrar", min_value=7, max_value=21
 st.title("Gestão de posts")
 st.caption("Próximos posts planeados e publicação no Instagram")
 
+posts = []
+db_error = None
 try:
     posts = get_upcoming_posts(n=n_posts, from_date=date.today())
 except Exception as e:
-    st.error(f"Erro ao ler o Google Sheet: {e}")
-    st.info("Configura os acessos na página **Configuração** (menu lateral) primeiro.")
-    st.stop()
+    db_error = e
 
-if not posts:
+if db_error:
+    st.error(f"Erro ao ler a base de dados: {db_error}")
+elif not posts:
     st.warning("Nenhum post encontrado para os próximos dias, nem posts por publicar de dias anteriores.")
-    st.stop()
+else:
+    st.subheader("Próximos posts")
+    table_data = []
+    for p in posts:
+        caption_preview = (p.get("caption") or "")[:50] + ("..." if len(p.get("caption") or "") > 50 else "")
+        gemini_preview = (p.get("gemini_prompt") or "")[:40] + ("..." if len(p.get("gemini_prompt") or "") > 40 else "")
+        slide2_preview = (p.get("slide2_text") or "")[:40] + ("..." if len(p.get("slide2_text") or "") > 40 else "")
+        table_data.append({
+            "ID": p.get("row_index"),
+            "Data": p.get("date", ""),
+            "Hora": p.get("time", ""),
+            "Tipo": "🎠 carousel" if (p.get("post_type") or "single") == "carousel" else "single",
+            "Image Text": (p.get("image_text") or "")[:40] + ("..." if len(p.get("image_text") or "") > 40 else ""),
+            "Slide2 Text": slide2_preview or "—",
+            "Caption": caption_preview,
+            "Gemini_Prompt": gemini_preview,
+            "Status": p.get("status", ""),
+            "Published": p.get("published", ""),
+            "Image Prompt": (p.get("image_prompt") or "")[:30] + ("..." if len(p.get("image_prompt") or "") > 30 else ""),
+        })
+    st.dataframe(table_data, use_container_width=True, hide_index=True)
 
-st.subheader("Próximos posts")
-table_data = []
-for p in posts:
-    caption_preview = (p.get("caption") or "")[:50] + ("..." if len(p.get("caption") or "") > 50 else "")
-    gemini_preview = (p.get("gemini_prompt") or "")[:40] + ("..." if len(p.get("gemini_prompt") or "") > 40 else "")
-    slide2_preview = (p.get("slide2_text") or "")[:40] + ("..." if len(p.get("slide2_text") or "") > 40 else "")
-    table_data.append({
-        "Linha": p.get("row_index"),
-        "Data": p.get("date", ""),
-        "Hora": p.get("time", ""),
-        "Tipo": "🎠 carousel" if (p.get("post_type") or "single") == "carousel" else "single",
-        "Image Text": (p.get("image_text") or "")[:40] + ("..." if len(p.get("image_text") or "") > 40 else ""),
-        "Slide2 Text": slide2_preview or "—",
-        "Caption": caption_preview,
-        "Gemini_Prompt": gemini_preview,
-        "Status": p.get("status", ""),
-        "Published": p.get("published", ""),
-        "Image Prompt": (p.get("image_prompt") or "")[:30] + ("..." if len(p.get("image_prompt") or "") > 30 else ""),
-    })
-st.dataframe(table_data, use_container_width=True, hide_index=True)
+    st.subheader("Publicar")
+    row_options = [f"ID {p['row_index']} — {p.get('date')} {p.get('time')} — {(p.get('image_text') or '')[:40]}..." for p in posts]
+    row_values = [p["row_index"] for p in posts]
+    selected_label = st.selectbox(
+        "Escolhe o post para publicar (Post selected row):",
+        options=row_options,
+        index=0,
+    )
+    selected_row_index = row_values[row_options.index(selected_label)] if selected_label else row_values[0]
 
-st.subheader("Publicar")
-row_options = [f"Linha {p['row_index']} — {p.get('date')} {p.get('time')} — {(p.get('image_text') or '')[:40]}..." for p in posts]
-row_values = [p["row_index"] for p in posts]
-selected_label = st.selectbox(
-    "Escolhe a linha para publicar (Post selected row):",
-    options=row_options,
-    index=0,
-)
-selected_row_index = row_values[row_options.index(selected_label)] if selected_label else row_values[0]
+    col1, col2, _ = st.columns([1, 1, 2])
+    with col1:
+        if st.button("Post next", type="primary"):
+            success, message, media_id, _post = run_publish_next(today=date.today(), now=datetime.now().time())
+            st.session_state.last_publish_result = (success, message, media_id)
+            st.rerun()
+    with col2:
+        if st.button("Post selected row"):
+            success, message, media_id, _post = run_publish_row(selected_row_index)
+            st.session_state.last_publish_result = (success, message, media_id)
+            st.rerun()
 
-col1, col2, _ = st.columns([1, 1, 2])
-with col1:
-    if st.button("Post next", type="primary"):
-        success, message, media_id, _post = run_publish_next(today=date.today(), now=datetime.now().time())
-        st.session_state.last_publish_result = (success, message, media_id)
-        st.rerun()
-with col2:
-    if st.button("Post selected row"):
-        success, message, media_id, _post = run_publish_row(selected_row_index)
-        st.session_state.last_publish_result = (success, message, media_id)
-        st.rerun()
+    if st.session_state.last_publish_result:
+        success, message, media_id = st.session_state.last_publish_result
+        if success:
+            st.success(f"Última ação: {message}")
+        else:
+            st.error(f"Última ação: {message}")
 
-if st.session_state.last_publish_result:
-    success, message, media_id = st.session_state.last_publish_result
-    if success:
-        st.success(f"Última ação: {message}")
-    else:
-        st.error(f"Última ação: {message}")
+    with st.expander("Ver detalhes do post selecionado"):
+        detail = next((p for p in posts if p["row_index"] == selected_row_index), None)
+        if detail:
+            is_carousel = (detail.get("post_type") or "single") == "carousel" and bool((detail.get("slide2_text") or "").strip())
+            st.write("**Tipo:**", "🎠 Carrossel (2 slides)" if is_carousel else "Imagem única")
+            st.write("**Image Text (slide 1):**", detail.get("image_text") or "(vazio)")
+            if is_carousel:
+                st.write("**Slide2 Text (slide 2):**", detail.get("slide2_text") or "(vazio)")
+            st.write("**Caption:**", detail.get("caption") or "(vazio)")
+            st.write("**Gemini_Prompt:**", detail.get("gemini_prompt") or "(vazio)")
+            st.write("**ImageURL:**", detail.get("image_url") or "(vazio)")
+            st.write("**Image Prompt:**", detail.get("image_prompt") or "(vazio)")
+            st.write("**Status:**", detail.get("status"), "| **Published:**", detail.get("published"))
 
-with st.expander("Ver detalhes do post selecionado"):
-    detail = next((p for p in posts if p["row_index"] == selected_row_index), None)
-    if detail:
-        is_carousel = (detail.get("post_type") or "single") == "carousel" and bool((detail.get("slide2_text") or "").strip())
-        st.write("**Tipo:**", "🎠 Carrossel (2 slides)" if is_carousel else "Imagem única")
-        st.write("**Image Text (slide 1):**", detail.get("image_text") or "(vazio)")
-        if is_carousel:
-            st.write("**Slide2 Text (slide 2):**", detail.get("slide2_text") or "(vazio)")
-        st.write("**Caption:**", detail.get("caption") or "(vazio)")
-        st.write("**Gemini_Prompt:**", detail.get("gemini_prompt") or "(vazio)")
-        st.write("**ImageURL:**", detail.get("image_url") or "(vazio)")
-        st.write("**Image Prompt:**", detail.get("image_prompt") or "(vazio)")
-        st.write("**Status:**", detail.get("status"), "| **Published:**", detail.get("published"))
+st.divider()
+st.subheader("Gestão de posts (editar / apagar)")
+st.caption("Edita ou apaga qualquer post guardado na base de dados, incluindo os já publicados.")
+
+all_posts = get_all_posts()
+if not all_posts:
+    st.info("Ainda não há posts na base de dados.")
+else:
+    st.metric("Total de posts na base de dados", len(all_posts))
+    with st.expander(f"Ver todos os {len(all_posts)} posts (para conferir com a Sheet antiga)", expanded=False):
+        full_table = [
+            {
+                "ID": p.get("row_index"),
+                "Data": p.get("date", ""),
+                "Hora": p.get("time", ""),
+                "Image Text": (p.get("image_text") or "")[:60],
+                "Status": p.get("status", ""),
+                "Published": p.get("published", ""),
+                "ImageURL": "✅" if (p.get("image_url") or "").strip() else "—",
+            }
+            for p in all_posts
+        ]
+        st.dataframe(full_table, use_container_width=True, hide_index=True, height=500)
+
+    manage_options = [
+        f"ID {p['row_index']} — {p.get('date')} {p.get('time')} — {(p.get('image_text') or '')[:40]}"
+        for p in all_posts
+    ]
+    manage_values = [p["row_index"] for p in all_posts]
+    manage_label = st.selectbox("Escolhe o post a gerir:", options=manage_options, key="manage_post_select")
+    manage_row_index = manage_values[manage_options.index(manage_label)]
+    manage_post = next(p for p in all_posts if p["row_index"] == manage_row_index)
+
+    with st.form(key=f"edit_post_form_{manage_row_index}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            edit_date = st.text_input("Date (YYYY-MM-DD)", value=manage_post.get("date", ""))
+            edit_time = st.text_input("Time (HH:MM)", value=manage_post.get("time", ""))
+            edit_status = st.text_input("Status", value=manage_post.get("status", ""))
+            edit_published = st.selectbox(
+                "Published",
+                options=["", "yes"],
+                index=(1 if (manage_post.get("published") or "").strip().lower() in ("yes", "y", "1", "true") else 0),
+            )
+            edit_post_type = st.selectbox(
+                "Post Type",
+                options=["single", "carousel"],
+                index=(1 if (manage_post.get("post_type") or "single") == "carousel" else 0),
+            )
+        with c2:
+            edit_image_url = st.text_input("ImageURL", value=manage_post.get("image_url", ""))
+            edit_image_prompt = st.text_input("Image Prompt (flag)", value=manage_post.get("image_prompt", ""))
+        edit_image_text = st.text_area("Image Text", value=manage_post.get("image_text", ""), height=80)
+        edit_caption = st.text_area("Caption", value=manage_post.get("caption", ""), height=120)
+        edit_gemini_prompt = st.text_area("Gemini_Prompt", value=manage_post.get("gemini_prompt", ""), height=100)
+        edit_slide2_text = st.text_area("Slide2 Text", value=manage_post.get("slide2_text", ""), height=100)
+
+        save_col, delete_col = st.columns(2)
+        with save_col:
+            save_clicked = st.form_submit_button("💾 Guardar alterações", type="primary")
+        with delete_col:
+            confirm_delete = st.checkbox("Confirmo que quero apagar este post", key=f"confirm_delete_{manage_row_index}")
+            delete_clicked = st.form_submit_button("🗑️ Apagar post")
+
+    if save_clicked:
+        try:
+            update_post(manage_row_index, {
+                "date": edit_date.strip(),
+                "time": edit_time.strip(),
+                "image_text": edit_image_text,
+                "caption": edit_caption,
+                "gemini_prompt": edit_gemini_prompt,
+                "status": edit_status.strip(),
+                "published": edit_published,
+                "image_url": edit_image_url.strip(),
+                "image_prompt": edit_image_prompt.strip(),
+                "post_type": edit_post_type,
+                "slide2_text": edit_slide2_text,
+            })
+            st.success(f"Post {manage_row_index} atualizado.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao guardar: {e}")
+
+    if delete_clicked:
+        if not confirm_delete:
+            st.error("Marca a caixa de confirmação antes de apagar.")
+        else:
+            try:
+                delete_post(manage_row_index)
+                st.success(f"Post {manage_row_index} apagado.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao apagar: {e}")

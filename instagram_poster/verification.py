@@ -41,13 +41,23 @@ USAGE_HEADERS = ("X-App-Usage", "X-Ad-Account-Usage", "X-Page-Usage")
 
 
 def verify_google_sheets() -> Tuple[bool, str]:
-    """Verifica se a ligação ao Google Sheet funciona (lê 1 linha)."""
+    """Verifica se a ligação ao Google Sheet funciona (lê 1 linha). Não usado pelo pipeline principal (ver verify_database)."""
     try:
         from instagram_poster.sheets_client import get_upcoming_posts
         _ = get_upcoming_posts(n=1, from_date=None)
         return True, "Google Sheets: ligação OK."
     except Exception as e:
         return False, f"Google Sheets: {e}"
+
+
+def verify_database() -> Tuple[bool, str]:
+    """Verifica se a base de dados interna (posts.db) está acessível."""
+    try:
+        from instagram_poster.db import get_all_posts
+        posts = get_all_posts()
+        return True, f"Base de Dados: OK ({len(posts)} posts)"
+    except Exception as e:
+        return False, f"Base de Dados: {e}"
 
 
 def verify_instagram() -> Tuple[bool, str]:
@@ -376,10 +386,10 @@ def verify_video_provider() -> Tuple[bool, str]:
 def verify_all_connections() -> List[Tuple[str, bool, str]]:
     """
     Executa todas as verificações de ligação e devolve lista de (nome, ok, mensagem).
-    Ordem: Google Sheets, Instagram, Imagens, Vídeo IA, Texto (IA), Media.
+    Ordem: Base de Dados, Instagram, Imagens, Vídeo IA, Texto (IA), Media.
     """
     results: List[Tuple[str, bool, str]] = []
-    results.append(("Google Sheets", *verify_google_sheets()))
+    results.append(("Base de Dados", *verify_database()))
     results.append(("Instagram", *verify_instagram()))
     results.append(("Imagens", *verify_image_provider()))
     results.append(("Vídeo IA", *verify_video_provider()))

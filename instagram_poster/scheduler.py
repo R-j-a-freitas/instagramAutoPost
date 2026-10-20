@@ -11,7 +11,7 @@ from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Generator, Literal, Optional
 
-from instagram_poster import ig_client, sheets_client
+from instagram_poster import db, ig_client
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _PUBLISH_LOCK_FILE = _PROJECT_ROOT / ".autopublish_publish.lock"
@@ -81,27 +81,27 @@ def _reload_env_before_story_check() -> None:
         pass
 
 
-def _update_sheet_after_publish(row_index: int, image_url: str) -> None:
+def _update_db_after_publish(row_index: int, image_url: str) -> None:
     """
-    Marca a linha como publicada e atualiza ImageURL no Sheet, com retry.
+    Marca o post como publicado e atualiza ImageURL na BD, com retry.
     Se falhar após todos os retries, regista o erro em log (e no autopublish se disponível)
     mas não levanta exceção — o post já foi publicado no Instagram.
     """
     last_error = None
     for attempt in range(1, _SHEET_UPDATE_RETRIES + 1):
         try:
-            sheets_client.mark_published(row_index)
-            sheets_client.update_image_url(row_index, image_url)
-            logger.info("Sheet atualizado: linha %s -> Published=yes, ImageURL (tentativa %s)", row_index, attempt)
+            db.mark_published(row_index)
+            db.update_image_url(row_index, image_url)
+            logger.info("BD atualizada: post %s -> Published=yes, ImageURL (tentativa %s)", row_index, attempt)
             return
         except Exception as e:
             last_error = e
-            logger.warning("Falha a atualizar Sheet (linha %s, tentativa %s/%s): %s", row_index, attempt, _SHEET_UPDATE_RETRIES, e)
+            logger.warning("Falha a atualizar BD (post %s, tentativa %s/%s): %s", row_index, attempt, _SHEET_UPDATE_RETRIES, e)
             if attempt < _SHEET_UPDATE_RETRIES:
                 _time.sleep(_SHEET_UPDATE_RETRY_DELAY_SEC)
     msg = (
-        f"Sheet não atualizado após {_SHEET_UPDATE_RETRIES} tentativas (linha {row_index}). "
-        f"O post foi publicado no Instagram. Marca manualmente Published=yes e ImageURL na linha {row_index}. Erro: {last_error}"
+        f"BD não atualizada após {_SHEET_UPDATE_RETRIES} tentativas (post {row_index}). "
+        f"O post foi publicado no Instagram. Marca manualmente Published=yes e ImageURL no post {row_index}. Erro: {last_error}"
     )
     logger.error(msg)
     try:
@@ -120,15 +120,15 @@ def select_post_to_publish(
     """
     Seleciona o post a publicar.
     - mode="next": usa get_next_ready_post(today, now).
-    - mode="row": usa a linha específica row_index (1-based; 2 = primeira linha de dados).
+    - mode="row": usa o post específico row_index (id na BD).
     Devolve o dicionário do post (com row_index, image_url, caption, etc.) ou None.
     """
     if mode == "next":
-        return sheets_client.get_next_ready_post(today=today or date.today(), now=now or datetime.now().time())
+        return db.get_next_ready_post(today=today or date.today(), now=now or datetime.now().time())
     if mode == "row":
         if row_index is None:
             raise ValueError("Para mode='row' é obrigatório indicar row_index.")
-        return sheets_client.get_row_by_index(row_index)
+        return db.get_row_by_index(row_index)
     raise ValueError("mode deve ser 'next' ou 'row'")
 
 
@@ -141,10 +141,11 @@ def _publish_carousel_post(
     caption: str,
 ) -> tuple[str, str]:
     """
-    Publica um carrossel de 2 slides (imagem + cartão de explicação do dia).
-    - Se image_url já estiver preenchido, usa-o como slide 1 e gera só o slide 2 a partir dele.
-    - Caso contrário, gera as duas imagens a partir de UMA única chamada à AI (Gemini_Prompt/Image Text).
-    Devolve (media_id, slide1_image_url) — o slide1_image_url é o que fica gravado em ImageURL no Sheet.
+    Publica um carrossel editorial (2 a 6 slides: imagem-hook + um cartão por parágrafo
+    de Slide2 Text).
+    - Se image_url já estiver preenchido, usa-o como slide 1 e gera os restantes a partir dele.
+    - Caso contrário, gera todas as imagens a partir de UMA única chamada à AI (Gemini_Prompt/Image Text).
+    Devolve (media_id, slide1_image_url) — o slide1_image_url é o que fica gravado em ImageURL na BD.
     """
     from instagram_poster import image_generator
     provider_name = get_image_provider()
@@ -153,39 +154,44 @@ def _publish_carousel_post(
         if image_url:
             slide1_url = image_url
             slide1_bytes = image_generator._download_image(image_url)
-            slide2_bytes = image_generator.render_explanation_card(slide1_bytes, slide2_text)
-            slide2_url = image_generator.upload_image_bytes(slide2_bytes, public_id_prefix=f"keepcalm_{row_index}_s2")
+            paragraphs = image_generator._split_carousel_paragraphs(slide2_text)
+            slide_urls = [slide1_url]
+            for i, paragraph in enumerate(paragraphs, start=2):
+                slide_bytes = image_generator.render_explanation_card(slide1_bytes, paragraph)
+                slide_urls.append(
+                    image_generator.upload_image_bytes(slide_bytes, public_id_prefix=f"keepcalm_{row_index}_s{i}")
+                )
         else:
             if not (gemini_prompt or image_text):
                 raise ValueError(
-                    "O post não tem ImageURL nem Gemini_Prompt/Image Text no Sheet. Preenche um deles ou configura "
+                    "O post não tem ImageURL nem Gemini_Prompt/Image Text na BD. Preenche um deles ou configura "
                     f"o provedor de imagens ({provider_label}) na página Configuração."
                 )
-            slide1_url, slide2_url = image_generator.get_carousel_slides_from_prompt(
+            slide_urls = image_generator.get_carousel_slides_from_prompt(
                 prompt=gemini_prompt or image_text,
                 quote_text=image_text,
                 explanation_text=slide2_text,
                 use_full_prompt=bool(gemini_prompt),
                 public_id_prefix=f"keepcalm_{row_index}",
             )
+            slide1_url = slide_urls[0]
     except ValueError:
         raise
     except Exception as e:
         raise ValueError(
             f"Falha ao gerar imagens do carrossel com {provider_label}: {e}. "
-            "Verifica as credenciais na Configuração ou preenche ImageURL no Sheet."
+            "Verifica as credenciais na Configuração ou preenche ImageURL na BD."
         ) from e
 
-    item1_id = ig_client.create_carousel_item(slide1_url)
-    item2_id = ig_client.create_carousel_item(slide2_url)
-    parent_id = ig_client.create_carousel([item1_id, item2_id], caption)
+    item_ids = [ig_client.create_carousel_item(url) for url in slide_urls]
+    parent_id = ig_client.create_carousel(item_ids, caption)
     media_id = ig_client.publish_media(parent_id)
     return media_id, slide1_url
 
 
 def publish_post(post: dict[str, Any]) -> str:
     """
-    Publica um post no Instagram e marca o Sheet como publicado.
+    Publica um post no Instagram e marca a BD como publicada.
     - post: dicionário com image_url (opcional), gemini_prompt, image_text, caption, row_index,
       post_type ("single" ou "carousel") e slide2_text (explicação do dia para o 2º slide).
     - Se image_url estiver vazio, gera a imagem com o provedor activo usando Gemini_Prompt (ou Image Text como fallback)
@@ -202,7 +208,7 @@ def publish_post(post: dict[str, Any]) -> str:
     post_type = (post.get("post_type") or "single").strip().lower()
     slide2_text = (post.get("slide2_text") or "").strip()
     if row_index is None:
-        raise ValueError("O post não tem row_index (linha do Sheet).")
+        raise ValueError("O post não tem row_index (id na BD).")
 
     # "yes" e valores não-URL vêm da coluna Image Prompt por engano; tratar como vazio
     if image_url and not (image_url.startswith("http://") or image_url.startswith("https://")):
@@ -235,20 +241,20 @@ def publish_post(post: dict[str, Any]) -> str:
             except Exception as e:
                 raise ValueError(
                     f"Falha ao gerar imagem com {provider_label}: {e}. "
-                    "Verifica as credenciais na Configuração ou preenche ImageURL no Sheet."
+                    "Verifica as credenciais na Configuração ou preenche ImageURL na BD."
                 ) from e
         if not image_url:
             provider_name = get_image_provider()
             provider_label = AVAILABLE_PROVIDERS.get(provider_name, provider_name)
             raise ValueError(
-                f"O post não tem ImageURL no Sheet. Preenche ImageURL ou configura "
+                f"O post não tem ImageURL na BD. Preenche ImageURL ou configura "
                 f"o provedor de imagens ({provider_label}) na página Configuração."
             )
 
         creation_id = ig_client.create_media(image_url=image_url, caption=caption)
         media_id = ig_client.publish_media(creation_id)
 
-    _update_sheet_after_publish(row_index, image_url)
+    _update_db_after_publish(row_index, image_url)
 
     # Publicar Story automaticamente com o mesmo conteúdo, se activado
     _reload_env_before_story_check()
@@ -358,11 +364,11 @@ def run_publish_next(
         if not lock_ok:
             logger.info("Outro processo a publicar; a ignorar para evitar duplicado.")
             return False, "Outro processo a publicar. Aguarda o próximo ciclo.", None, post
-        # Re-leitura dentro do lock: evita republicar se o Sheet foi atualizado por outro processo
-        fresh = sheets_client.get_row_by_index(row_index)
+        # Re-leitura dentro do lock: evita republicar se a BD foi atualizada por outro processo
+        fresh = db.get_row_by_index(row_index)
         if fresh and (str(fresh.get("published") or "").strip().lower() in ("yes", "y", "1", "true")):
-            logger.info("Linha %s já está publicada no Sheet; a ignorar para evitar duplicado.", row_index)
-            return False, f"Linha {row_index} já está publicada no Sheet. Pode ter sido atualizada por outro processo.", None, post
+            logger.info("Post %s já está publicado na BD; a ignorar para evitar duplicado.", row_index)
+            return False, f"Post {row_index} já está publicado na BD. Pode ter sido atualizado por outro processo.", None, post
         post_date = post.get("date", "")
         post_time = post.get("time", "")
         logger.info("A publicar post: linha %s, agendado para %s %s", row_index, post_date, post_time)

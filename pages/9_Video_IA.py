@@ -1,6 +1,6 @@
 """
 Vídeo IA: geração de vídeos a partir de prompts usando Pollinations.
-Permite escolher um post do Sheets, gerar o vídeo, escolher música e publicar no Instagram.
+Permite escolher um post da base de dados, gerar o vídeo, escolher música e publicar no Instagram.
 """
 import tempfile
 import streamlit as st
@@ -22,7 +22,7 @@ from instagram_poster.config import (
     get_video_provider,
     get_nvidia_video_model,
 )
-from instagram_poster.sheets_client import get_upcoming_posts, get_row_by_index
+from instagram_poster.db import get_upcoming_posts, get_row_by_index
 from instagram_poster.providers.provider_pollinations import PollinationsProvider
 from instagram_poster.providers.provider_nvidia import NVIDIAProvider
 from instagram_poster.reel_generator import (
@@ -68,18 +68,18 @@ video_provider = get_video_provider()
 provider_label = "NVIDIA NIM" if video_provider == "nvidia" else "Pollinations"
 
 st.title(f"Vídeo IA ({provider_label})")
-st.caption(f"Gera um vídeo a partir da descrição de um post do Google Sheets usando {provider_label}.")
+st.caption(f"Gera um vídeo a partir da descrição de um post da base de dados usando {provider_label}.")
 
 # --- Secção 1: Seleção de post ---
-st.subheader("1. Escolher post do Sheets")
+st.subheader("1. Escolher post da base de dados")
 try:
     upcoming = get_upcoming_posts(n=20)
 except Exception as e:
-    st.error(f"Erro ao ler o Sheet: {e}")
+    st.error(f"Erro ao ler a base de dados: {e}")
     upcoming = []
 
 if not upcoming:
-    st.warning("Nenhum post planeado no Sheet.")
+    st.warning("Nenhum post planeado na base de dados.")
     st.stop()
 
 # Criar opções para o selectbox
@@ -349,11 +349,11 @@ else:
                 creation_id = ig_client.create_reel(video_url=video_url, caption=video_caption)
                 media_id = ig_client.publish_media(creation_id, max_wait=300)
                 
-                # Atualizar Sheet e logs
+                # Atualizar BD e logs
                 if row_idx:
-                    from instagram_poster import sheets_client
-                    sheets_client.update_image_url(row_idx, video_url)
-                    sheets_client.mark_published(row_idx)
+                    from instagram_poster import db
+                    db.update_image_url(row_idx, video_url)
+                    db.mark_published(row_idx)
                     mark_posts_used_in_reel([row_idx])
                 
                 autopublish.log_reel_manual(video_caption, media_id)
