@@ -192,14 +192,17 @@ def storyline_edit(clips_dir: Path, request: str, timeout: int = 1500, session_i
     r = subprocess.run([str(STORYLINE_PY), str(STORYLINE_BRIDGE), "--base-url", STORYLINE_URL, "--session-id", session_id,
                         "--lang", "en", "--timeout", str(timeout), "--prompt", request],
                        capture_output=True, text=True, timeout=timeout + 60, cwd=STORYLINE_DIR)
-    video = latest_storyline_video(session_id, since=started)
+    video = latest_storyline_video(session_id, since=started, log=r.stdout or "")
     return {"session_id": session_id, "video": video, "log": (r.stdout or "")[-4000:] + (r.stderr or "")[-2000:],
             "returncode": r.returncode}
 
 
-def latest_storyline_video(session_id: str, since: float = 0) -> Optional[Path]:
-    outputs = STORYLINE_DIR / "outputs"
-    cands = [p for p in outputs.rglob("*.mp4") if session_id in str(p) and p.stat().st_mtime >= since - 5]
-    if not cands:
-        cands = [p for p in outputs.rglob("output_*.mp4") if p.stat().st_mtime >= since - 5]
+def latest_storyline_video(session_id: str, since: float = 0, log: str = "") -> Optional[Path]:
+    """O vídeo final: o caminho indicado na resposta do agente, ou o MP4 mais recente da sessão
+    em .storyline/.server_cache/<sessão>/render_video_*/ (ou outputs/)."""
+    for m in re.findall(r"(/[^\s)\]\"']+\.mp4)", log or ""):
+        if Path(m).is_file():
+            return Path(m)
+    roots = [STORYLINE_DIR / ".storyline" / ".server_cache" / session_id, STORYLINE_DIR / "outputs"]
+    cands = [p for r in roots if r.is_dir() for p in r.rglob("output_*.mp4") if p.stat().st_mtime >= since - 5]
     return max(cands, key=lambda p: p.stat().st_mtime) if cands else None
