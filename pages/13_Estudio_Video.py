@@ -179,8 +179,7 @@ with tab_mont:
             st.caption("O agente vê os clips, decide a ordem e os cortes, escreve legendas no ecrã e escolhe música da "
                        "biblioteca livre. Sem voz e sem transições por IA. Usa o modelo de texto configurado em "
                        "/video/ › OpenStoryline (custo de alguns cêntimos). Demora ~2–3 minutos.")
-            st.warning("Ainda experimental: o vídeo sai em 608×1080 e as legendas usam fontes chinesas, que partem "
-                       "palavras inglesas a meio e não mostram o apóstrofo. Revê antes de publicar.")
+            st.warning("Ainda experimental: o vídeo sai em 608×1080. Revê antes de publicar.")
             req = st.text_area("Pedido (em inglês)", height=150, key="m_req", value=(
                 "Edit my uploaded clips into one vertical 9:16 Instagram Reel of about 30 seconds. English only. "
                 "Add 3 short on-screen tips as subtitles. Calm piano background music from the music library. "
