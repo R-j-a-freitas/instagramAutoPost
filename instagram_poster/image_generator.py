@@ -108,6 +108,11 @@ def _quote_to_scene_prompt(quote_text: str) -> str:
         return _GENERIC_FALLBACK_PROMPT
 
 
+# A IA gera pessoas incoerentes (mãos, cabeças, pulsos): nunca pedir figuras humanas.
+_NO_PEOPLE_INSTR = (" No people, no faces, no hands, no body parts, no screens, no papers or documents"
+                    " with writing. Calm atmospheric scene (nature, light, interior objects).")
+
+
 def _sanitize_prompt(prompt: str, quote_text: str) -> str:
     """Remove texto literal da quote e instruções de renderização de texto do prompt."""
     clean = prompt
@@ -127,6 +132,7 @@ def _sanitize_prompt(prompt: str, quote_text: str) -> str:
     if "do not include any text" not in clean.lower():
         clean = clean.rstrip(".") + ". " + no_text_instr
 
+    clean += _NO_PEOPLE_INSTR
     return clean
 
 

@@ -66,11 +66,6 @@ def free_music_tracks() -> list[Path]:
     return sorted(p for p in FREE_MUSIC_DIR.iterdir() if p.suffix.lower() in (".mp3", ".m4a", ".wav"))
 
 
-# Fundos com pessoas, mãos ou papéis com escrita saem deformados (mãos, cabeças, texto ilegível).
-_BG_SAFETY = (" Scene only: no people, no faces, no hands, no body parts, no screens, no papers or"
-              " documents with writing. Calm atmospheric composition (nature, light, interior objects).")
-
-
 def _vertical_background(post: dict[str, Any]) -> bytes:
     """Imagem 1080x1920 sem texto: gerada em 9:16 a partir do prompt do post (Pollinations);
     se não for possível, recorte vertical da imagem do post (que já tem a frase, por isso é o plano B)."""
@@ -84,7 +79,7 @@ def _vertical_background(post: dict[str, Any]) -> bytes:
     if prompt and get_image_provider() == "pollinations":
         try:
             from instagram_poster.providers.provider_pollinations import PollinationsProvider
-            return PollinationsProvider().generate(_sanitize_prompt(prompt, quote) + _BG_SAFETY, width=W, height=H)
+            return PollinationsProvider().generate(_sanitize_prompt(prompt, quote), width=W, height=H)
         except Exception as e:  # rede/créditos: segue para o plano B
             logger.warning("Quote reel: imagem 9:16 falhou (%s); a usar recorte da imagem do post", e)
     img = Image.open(io.BytesIO(_download_image(post["image_url"]))).convert("RGB")

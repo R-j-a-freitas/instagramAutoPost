@@ -28,6 +28,10 @@ MAX_HASHTAGS = 5
 QUALITY_RULES = """
 ## Quality rules (these take precedence over any earlier rule that contradicts them)
 
+### Image prompts
+- Never describe people, faces, hands or body parts, nor screens or papers with writing: AI renders them incoherently.
+  Use nature, light, weather, objects and empty interiors instead.
+
 ### Image Text (the hook, slide 1)
 - Make it SPECIFIC. Name a concrete moment, scene, number or behaviour the reader recognises from their own day:
   "the text you rewrote four times before sending", "replaying one conversation at 2 a.m.", "saying sorry three times in one email".
