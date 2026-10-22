@@ -141,7 +141,7 @@ def _publish_carousel_post(
     caption: str,
 ) -> tuple[str, str]:
     """
-    Publica um carrossel editorial (2 a 6 slides: imagem-hook + um cartão por parágrafo
+    Publica um carrossel editorial (2 a 8 slides: imagem-hook + um cartão por parágrafo
     de Slide2 Text).
     - Se image_url já estiver preenchido, usa-o como slide 1 e gera os restantes a partir dele.
     - Caso contrário, gera todas as imagens a partir de UMA única chamada à AI (Gemini_Prompt/Image Text).
@@ -156,8 +156,9 @@ def _publish_carousel_post(
             slide1_bytes = image_generator._download_image(image_url)
             paragraphs = image_generator._split_carousel_paragraphs(slide2_text)
             slide_urls = [slide1_url]
+            total = len(paragraphs) + 1
             for i, paragraph in enumerate(paragraphs, start=2):
-                slide_bytes = image_generator.render_explanation_card(slide1_bytes, paragraph)
+                slide_bytes = image_generator.render_explanation_card(slide1_bytes, paragraph, slide_label=f"{i}/{total}")
                 slide_urls.append(
                     image_generator.upload_image_bytes(slide_bytes, public_id_prefix=f"keepcalm_{row_index}_s{i}")
                 )

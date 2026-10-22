@@ -286,7 +286,7 @@ def overlay_quote_on_image(image_bytes: bytes, quote_text: str) -> bytes:
     return buf.getvalue()
 
 
-def render_explanation_card(image_bytes: bytes, explanation_text: str) -> bytes:
+def render_explanation_card(image_bytes: bytes, explanation_text: str, slide_label: str = "") -> bytes:
     """
     Cria um slide de explicação de um carrossel (slide 2+): a mesma imagem-base do slide 1,
     mas com um fundo mais desfocado/escurecido (para dar contraste a um parágrafo mais longo)
@@ -331,6 +331,16 @@ def render_explanation_card(image_bytes: bytes, explanation_text: str) -> bytes:
         draw.text((x + 2, y_cursor + 2), line, font=font, fill=BRAND_TEXT_SHADOW_COLOR)
         draw.text((x, y_cursor), line, font=font, fill=BRAND_TEXT_COLOR)
         y_cursor += line_heights[i] + line_spacing
+
+    # Número do slide ("3/7") no canto inferior direito, dentro da zona segura do recorte
+    # da grelha: ver o fim aumenta a percentagem de pessoas que chega ao último slide.
+    if slide_label:
+        label_font, _ = _load_text_font(max(18, int(h * 0.022)))
+        lb = draw.textbbox((0, 0), slide_label, font=label_font)
+        lx = w - (lb[2] - lb[0]) - int(w * 0.08)
+        ly = h - (lb[3] - lb[1]) - int(h * 0.06)
+        draw.text((lx + 1, ly + 1), slide_label, font=label_font, fill=BRAND_TEXT_SHADOW_COLOR)
+        draw.text((lx, ly), slide_label, font=label_font, fill=BRAND_TEXT_COLOR)
 
     buf = io.BytesIO()
     bg.convert("RGB").save(buf, format="JPEG", quality=95)
@@ -619,7 +629,7 @@ def get_image_url_from_prompt(
     return upload_image_bytes(image_bytes, public_id_prefix=public_id_prefix)
 
 
-_MAX_CAROUSEL_SLIDES = 6  # inclui o slide 1 (hook); a Graph API do Instagram permite até 10
+_MAX_CAROUSEL_SLIDES = 8  # inclui o slide 1 (hook); a Graph API do Instagram permite até 10
 
 
 def _split_carousel_paragraphs(explanation_text: str) -> list[str]:
@@ -662,8 +672,9 @@ def get_carousel_slides_from_prompt(
     slide1_bytes = overlay_quote_on_image(base_image_bytes, quote_text) if quote_text.strip() else _normalize_to_feed_size(base_image_bytes)
     slide_urls = [upload_image_bytes(slide1_bytes, public_id_prefix=f"{public_id_prefix}_s1")]
 
+    total = len(paragraphs) + 1
     for i, paragraph in enumerate(paragraphs, start=2):
-        slide_bytes = render_explanation_card(base_image_bytes, paragraph)
+        slide_bytes = render_explanation_card(base_image_bytes, paragraph, slide_label=f"{i}/{total}")
         slide_urls.append(upload_image_bytes(slide_bytes, public_id_prefix=f"{public_id_prefix}_s{i}"))
 
     return slide_urls

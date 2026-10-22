@@ -19,14 +19,23 @@ from instagram_poster.config import (
 )
 from instagram_poster.db import append_rows, get_last_date
 from instagram_poster.text_generator import generate_text
+from instagram_poster.content_quality import (
+    MIN_HOOK_SCORE,
+    caption_warnings,
+    carousel_slide_count,
+    humanize_post,
+    improve_weak_hooks,
+    score_hook,
+    system_prompt_with_quality_rules,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def _get_system_prompt() -> str:
-    """Devolve o prompt de sistema a usar: override do ficheiro se existir, senão o padrão."""
+    """Prompt de sistema (override do ficheiro se existir, senão o padrão) + regras de qualidade."""
     override = get_content_system_prompt_override()
-    return override if override else get_default_content_system_prompt()
+    return system_prompt_with_quality_rules(override if override else get_default_content_system_prompt())
 
 
 def _generate_content(
@@ -46,6 +55,11 @@ def _generate_content(
     posts = parsed.get("posts", parsed.get("rows", []))
     if isinstance(posts, dict):
         posts = [posts]
+    # Qualidade: texto humanizado e ganchos fracos reescritos (uma chamada extra à IA, só se preciso).
+    for p in posts:
+        humanize_post(p)
+    changes = improve_weak_hooks(posts, generate_text)
+    st.session_state["hook_changes"] = changes
     return posts
 
 
@@ -67,7 +81,17 @@ def _posts_to_dataframe(posts: list[dict], start_date: date) -> pd.DataFrame:
             "Post Type": post_type,
             "Slide2 Text": p.get("Slide2 Text", "") if post_type == "carousel" else "",
         })
-    return pd.DataFrame(rows)
+    return _with_quality_columns(pd.DataFrame(rows))
+
+
+def _with_quality_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Colunas só de leitura (não vão para a base de dados): nota do gancho, slides e avisos da legenda."""
+    df = df.copy()
+    scores = [score_hook(t) for t in df["Image Text"]]
+    df["Gancho"] = [f"{s['score']:.0f} {s['verdict']}" for s in scores]
+    df["Slides"] = [carousel_slide_count(t) if pt == "carousel" else 1 for t, pt in zip(df["Slide2 Text"], df["Post Type"])]
+    df["Avisos"] = ["; ".join(caption_warnings(c)) or "ok" for c in df["Caption"]]
+    return df
 
 
 _UI_TO_DB_COLUMNS = {
@@ -113,9 +137,9 @@ with nav3:
 st.title("Criacao de conteudo")
 st.caption("Gera novos posts com IA e adiciona directamente à base de dados interna.")
 st.info(
-    "A maioria dos posts é gerada como **carrossel editorial** (hook + 3-5 slides de "
-    "explicação, um por parágrafo em **Slide2 Text** separado por linha em branco — 4 a 6 "
-    "slides no total).",
+    "A maioria dos posts é gerada como **carrossel editorial**: gancho + 5 a 7 slides (um por "
+    "parágrafo em **Slide2 Text**, separados por linha em branco), terminando num slide-resumo "
+    "e num slide com um pedido (guardar ou enviar). Os slides são numerados automaticamente.",
     icon="🎠",
 )
 
@@ -182,9 +206,19 @@ if "generated_content" in st.session_state and st.session_state["generated_conte
             "Image Prompt": st.column_config.TextColumn("Image Prompt", width="small", disabled=True),
             "Post Type": st.column_config.SelectboxColumn("Post Type", width="small", options=["single", "carousel"]),
             "Slide2 Text": st.column_config.TextColumn("Slide2 Text", width="large"),
+            "Gancho": st.column_config.TextColumn("Gancho", width="small", disabled=True,
+                                                  help=f"Nota do gancho (slide 1), 0-100. Abaixo de {MIN_HOOK_SCORE} é reescrito automaticamente."),
+            "Slides": st.column_config.NumberColumn("Slides", width="small", disabled=True),
+            "Avisos": st.column_config.TextColumn("Avisos da legenda", width="medium", disabled=True),
         },
         key="content_editor",
     )
+    _changes = st.session_state.get("hook_changes") or []
+    if _changes:
+        with st.expander(f"{len(_changes)} gancho(s) fraco(s) reescrito(s) automaticamente"):
+            for c in _changes:
+                st.markdown(f"- ~~{c['old']}~~ ({c['old_score']:.0f}) → **{c['new']}** ({c['new_score']:.0f})")
+    st.caption("A nota do gancho e os avisos são calculados na geração; não são atualizados quando editas as células.")
 
     col_act1, col_act2, _ = st.columns([1, 1, 2])
     with col_act1:
