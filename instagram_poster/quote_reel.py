@@ -67,28 +67,18 @@ def free_music_tracks() -> list[Path]:
 
 
 def _vertical_background(post: dict[str, Any]) -> bytes:
-    """Imagem 1080x1920 sem texto: gerada em 9:16 a partir do prompt do post (Pollinations);
-    se não for possível, recorte vertical da imagem do post (que já tem a frase, por isso é o plano B)."""
-    from PIL import Image
-
+    """Imagem 1080x1920 sem texto: gerada em 9:16 a partir do prompt do post (Pollinations).
+    Se não for possível, falha: a imagem do post do feed já tem a frase gravada e o Reel
+    voltaria a pô-la por cima (texto duplicado e ilegível), por isso nunca serve de fundo."""
     from instagram_poster.config import get_image_provider
-    from instagram_poster.image_generator import _download_image, _sanitize_prompt
+    from instagram_poster.image_generator import _sanitize_prompt
 
     quote = (post.get("image_text") or "").strip()
     prompt = (post.get("gemini_prompt") or "").strip()
-    if prompt and get_image_provider() == "pollinations":
-        try:
-            from instagram_poster.providers.provider_pollinations import PollinationsProvider
-            return PollinationsProvider().generate(_sanitize_prompt(prompt, quote), width=W, height=H)
-        except Exception as e:  # rede/créditos: segue para o plano B
-            logger.warning("Quote reel: imagem 9:16 falhou (%s); a usar recorte da imagem do post", e)
-    img = Image.open(io.BytesIO(_download_image(post["image_url"]))).convert("RGB")
-    scale = max(W / img.width, H / img.height)
-    img = img.resize((round(img.width * scale), round(img.height * scale)), Image.Resampling.LANCZOS)
-    left, top = (img.width - W) // 2, (img.height - H) // 2
-    buf = io.BytesIO()
-    img.crop((left, top, left + W, top + H)).save(buf, format="JPEG", quality=95)
-    return buf.getvalue()
+    if not prompt or get_image_provider() != "pollinations":
+        raise RuntimeError("Quote reel: sem prompt ou fornecedor de imagem sem fundo 9:16 limpo")
+    from instagram_poster.providers.provider_pollinations import PollinationsProvider
+    return PollinationsProvider().generate(_sanitize_prompt(prompt, quote), width=W, height=H)
 
 
 def _text_overlay(quote: str) -> bytes:

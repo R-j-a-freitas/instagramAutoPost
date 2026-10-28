@@ -6,6 +6,7 @@ GARANTIA: Uma única resposta por comentário — ficheiro JSON com lock, limite
 import fcntl
 import json
 import logging
+import random
 import re
 import time as _time
 from datetime import datetime, timezone
@@ -20,6 +21,7 @@ from instagram_poster.ig_client import (
     get_media_caption,
 )
 from instagram_poster.text_generator import generate_text
+from instagram_poster.content_quality import humanize_text
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +31,25 @@ _ID_CACHE: dict[str, str] = {}
 
 # Prompt de sistema para garantir o tom do canal @keepcalmnbepositive
 _AI_REPLY_SYSTEM_PROMPT = """
-You're the person behind @keepcalmnbepositive, replying to a comment on your own post — not a brand account, not a bot. Think of it as texting back quickly between things.
+You're the person behind @keepcalmnbepositive, replying to a comment on your own post from your phone. Not a brand, not a coach, not a bot.
 Niche: personal development, mindset, self-compassion, slow growth.
 
-Write like an actual human replying fast on their phone:
-- Contractions always (that's, you're, it's, I'm, don't).
-- React to what they specifically said instead of a generic template — no default "Thank you so much!" / "This means a lot!" / "Sending you love" / "You've got this" openers. If you can't say something that responds to their actual words, keep it very short and simple instead.
-- Vary sentence length and structure between replies. Don't repeat the same phrasing pattern every time.
-- One sentence is usually enough. Two, max — never more.
-- Skip exclamation points unless it's genuinely warranted; one is plenty.
-- No toxic positivity, no hashtags. An emoji is welcome when it genuinely fits the moment (never more than one) — pick from a varied mix like 🙏 ✨ 💛 🌱 🤍 depending on the vibe of that specific reply, not the same one every time. Plenty of replies work fine with zero emoji — don't force one in.
-- It's fine to sound a little casual/imperfect — real replies aren't polished corporate copy.
-- Always written in English, even if the comment is in another language.
-- Tag them with @username somewhere near the start, but let it read like part of a real sentence, not a form letter.
+Match their energy and length. This is the most important rule:
+- A one or two word comment ("Deep", "So true", "Needed this", an emoji) gets a short, light reply of 2-8 words. Just acknowledge them like a friend would: "glad it landed", "right? took me a while to get there", "appreciate you 🤍".
+- A longer comment that shares something personal gets one sentence (two at most) that responds to what they actually said.
+- Never explain the post back to them, never add advice or a lesson they didn't ask for, never "you don't have to..." lines.
+
+Sound like a person, not a copywriter:
+- Mostly lowercase is fine. Contractions always.
+- Don't repeat their word back in a clever way ("deep is exactly what it is"). Don't build balanced, quotable sentences.
+- No em dashes or en dashes, no semicolons. Use commas or just stop.
+- No generic openers ("Thank you so much!", "This means a lot!", "Sending you love", "You've got this").
+- At most one emoji, only if it fits, placed at the end. Often use none. Vary them (🤍 🙏 ✨ 💛 🌱 🙌).
+- No exclamation marks unless it's really warranted, no hashtags, no questions that sound like engagement bait.
+- Always in English, even if the comment is in another language.
+- Start with @username, then the reply.
+
+Output only the reply text, nothing else.
 """
 
 
@@ -107,19 +115,39 @@ def _we_already_replied_to_comment(comment: dict) -> bool:
     return False
 
 
+def _clean_ai_reply(reply: str, username: str) -> str:
+    """Tira marcas de texto gerado: aspas à volta, travessões, ponto final solto, emoji no meio da frase."""
+    reply = reply.strip().strip('"').strip()
+    reply = re.sub(r"\s*[—–]\s*", ", ", reply)
+    reply = re.sub(r"\s*;\s*", ", ", reply)
+    reply = humanize_text(reply)
+    # Resposta curta não precisa de ponto final (soa a formulário)
+    if len(reply) < 80 and reply.endswith(".") and not reply.endswith(".."):
+        reply = reply[:-1]
+    # A IA põe quase sempre o mesmo emoji no fim; numa parte das respostas fica sem nenhum
+    m = re.search(r"\s*([^\w\s.,!?'@]+)$", reply)
+    if m and len(reply[: m.start()].strip()) > len(username) + 1 and random.random() < 0.4:
+        reply = reply[: m.start()].rstrip()
+    if not reply.startswith(f"@{username}"):
+        reply = f"@{username} {reply}"
+    return reply
+
+
 def _generate_ai_reply(username: str, comment_text: str, post_caption: str) -> str:
     """Gera uma resposta via IA (Pollinations) baseada no comentário e contexto do post."""
+    words = len(comment_text.split())
+    length_hint = (
+        "Their comment is very short, so reply in 2-8 words."
+        if words <= 4 else
+        "Reply in one natural sentence (two at most)."
+    )
     user_prompt = (
         f"Context (Original Post Caption): \"{post_caption}\"\n"
         f"User @{username} commented: \"{comment_text}\"\n\n"
-        f"Generate a kind and brief reply starting with @{username}:"
+        f"{length_hint} Start with @{username}."
     )
     try:
-        reply = generate_text(_AI_REPLY_SYSTEM_PROMPT, user_prompt)
-        reply = reply.strip()
-        # Garantir que começa com @username se o AI se esqueceu
-        if not reply.startswith(f"@{username}"):
-            reply = f"@{username} {reply}"
+        reply = _clean_ai_reply(generate_text(_AI_REPLY_SYSTEM_PROMPT, user_prompt), username)
         # Truncar se for demasiado longo para a API (300 chars é o limite do params, mas vamos ser seguros)
         return reply[:280]
     except Exception as e:

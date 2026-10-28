@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time as _time
 from contextlib import contextmanager
@@ -719,7 +720,24 @@ def _try_publish_story_reuse_impl() -> bool:
     with _lock:
         last = _last_story_reuse_at
     if last is None:
+        # Após um reinício, partir da última Story de reuse publicada (log persistido), não de "nunca"
         last = now - timedelta(hours=25)
+        for e in get_log():
+            if e.get("type") != "story" or e.get("story_source") != "reuse" or not e.get("success"):
+                continue
+            ts = e.get("timestamp")
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    continue
+            if isinstance(ts, datetime):
+                ts = ts.replace(tzinfo=None)
+                if ts > last:
+                    last = ts
+        with _lock:
+            if _last_story_reuse_at is None:
+                _last_story_reuse_at = last
     if (now - last).total_seconds() < interval_minutes * 60:
         return False
 
@@ -744,7 +762,12 @@ def _try_publish_story_reuse_impl() -> bool:
         if (ts or now) >= cutoff:
             recently_used_rows.add(e.get("row"))
     recently_used_rows = frozenset(recently_used_rows)
-    posts_available = [p for p in posts if p.get("row_index") not in recently_used_rows]
+    # Posts de vídeo (Reels) não servem de imagem de fundo para a Story
+    posts_available = [
+        p for p in posts
+        if p.get("row_index") not in recently_used_rows
+        and not re.search(r"\.(mp4|mov|webm|m4v)(\?|$)", (p.get("image_url") or "").strip(), re.I)
+    ]
     if not posts_available:
         logger.info("Autopublish Story reuse: todos os posts recentes já usados em Story; a saltar para evitar duplicado.")
         return False

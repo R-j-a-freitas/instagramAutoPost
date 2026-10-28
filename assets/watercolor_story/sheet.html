@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="fonts.css">
+<style>html,body{margin:0;background:#f1e9da}canvas{display:block}</style></head>
+<body><canvas id="c" width="1800" height="3000"></canvas>
+<script src="engine.js"></script><script src="objects.js"></script>
+<script>
+// model sheet of the object library: every object at the same height, with its name
+const cv = document.getElementById('c'), ctx = cv.getContext('2d'); window.DUR = 1;
+let objs = [];
+window.render = () => {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = PAPER; ctx.fillRect(0, 0, 1800, 3000);
+  objs.forEach((o, i) => {
+    const col = i % 6, row = Math.floor(i / 6), cx = 150 + col * 300, cy = 170 + row * 330, sc = Math.min(200 / o.h, 240 / o.w);
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(sc, sc);
+    if (o.line) drawS(ctx, o.S[0], 1); else ctx.drawImage(o.spr.cv, o.spr.x0, o.spr.y0);
+    if (o.steam) o.steam.forEach(s => drawS(ctx, s, 1));
+    ctx.restore();
+    ctx.font = '500 34px Caveat'; ctx.textAlign = 'center'; ctx.fillStyle = INK; ctx.fillText(o.name, cx, cy + 150);
+  });
+};
+(async () => { await document.fonts.load('500 34px Caveat'); objs = OBJECT_NAMES.map((n, i) => buildObject(n, 900 + i)); window.READY = true; })();
+</script></body></html>
